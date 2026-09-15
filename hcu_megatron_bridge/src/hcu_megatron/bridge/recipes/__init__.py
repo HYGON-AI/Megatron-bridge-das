@@ -17,6 +17,12 @@
 Megatron Bridge Recipe Configurations
 
 This module exposes all recipe configurations from all model families.
+
+``env/env.sh`` copies this file over ``megatron/bridge/recipes/__init__.py``
+before every launch, which is how the HCU families below become visible to
+``find_library_recipe``: it resolves ``--recipe`` with ``getattr`` on the live
+``megatron.bridge.recipes`` module.  So this file must stay a superset of the
+upstream one -- the upstream star-imports first, then the HCU families.
 """
 
 from megatron.bridge.recipes.deepseek import *
@@ -72,3 +78,4 @@ from megatron.bridge.recipes.stepfun.h100 import *
 from megatron.bridge.recipes.wan import *
 from megatron.bridge.recipes.wan.h100 import *
 from hcu_megatron.bridge.recipes.deepseek import *
+from hcu_megatron.bridge.recipes.qwen35_vl import *
