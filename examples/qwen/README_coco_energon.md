@@ -3,144 +3,13 @@ Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
 Copyright (c) 2026 Hygon Information Technology Co., Ltd.
 -->
 
-# Qwen 3 VL - 视觉语言模型
+# Qwen 3 VL — Energon 数据集生成
 
-> 本文是 [README.md](README.md) 的中文版。英文原文为准,若两者出现分歧请以英文版为准。
-
-本目录包含 Qwen 3 视觉语言模型的示例脚本。
-
-模型介绍与架构细节见 [Qwen 3 - VL 文档](../../../../docs/models/qwen/qwen3-vl.md)。
-
-## 工作目录配置
-
-所有脚本都用 `WORKSPACE` 环境变量指定检查点和结果的根目录,默认为 `/workspace`。可以覆盖:
-
-```bash
-export WORKSPACE=/your/custom/path
-```
-
-目录结构:
-- `${WORKSPACE}/models/` — 转换后的检查点
-- `${WORKSPACE}/results/` — 训练输出与实验结果
-
-## 检查点转换
-
-### 导入 HF → Megatron
-把 HF 的 VL 模型导入到指定的 Megatron 路径:
-```bash
-./scripts/conversion/convert.sh import \
-  --hf-model Qwen/Qwen3-VL-8B-Instruct \
-  --megatron-path ${WORKSPACE}/models/Qwen3-VL-8B-Instruct
-```
-
-### 导出 Megatron → HF
-```bash
-./scripts/conversion/convert.sh export \
-  --hf-model Qwen/Qwen3-VL-8B-Instruct \
-  --megatron-path ${WORKSPACE}/models/Qwen3-VL-8B-Instruct/iter_0000000 \
-  --hf-path ${WORKSPACE}/models/Qwen3-VL-8B-Instruct-hf-export
-```
-
-## 推理
-
-### 在转换后的检查点上运行推理
-
-```bash
-uv run python -m torch.distributed.run --nproc_per_node=4 examples/conversion/hf_to_megatron_generate_vlm.py \
-  --hf_model_path Qwen/Qwen3-VL-8B-Instruct \
-  --megatron_model_path ${WORKSPACE}/models/Qwen3-VL-8B-Instruct/iter_0000000 \
-  --image_path "https://huggingface.co/nvidia/NVIDIA-Nemotron-Nano-12B-v2-VL-BF16/resolve/main/images/table.png" \
-  --prompt "Describe this image." \
-  --max_new_tokens 100 
-```
-
-注意:
-- `--megatron_model_path` 是可选的。不指定时,脚本会先转换模型再执行前向。
-- `--image_path` 也接受图片 URL:`--image_path="https://example.com/image.jpg"`
-
-[inference.sh](inference.sh) 脚本里有以下几种用法的命令:
-- 用 Hugging Face 检查点推理
-- 用导入的 Megatron 检查点推理
-- 用导出的 Hugging Face 检查点推理
-
-**预期输出:**
-```
-...
-Generation step 46
-Generation step 47
-Generation step 48
-Generation step 49
-======== GENERATED TEXT OUTPUT ========
-Image: https://huggingface.co/nvidia/NVIDIA-Nemotron-Nano-12B-v2-VL-BF16/resolve/main/images/table.png
-Prompt: Describe this image.
-Generated: <|im_start|>user
-<|vision_start|><|image_pad|><|image_pad|>
-...
-<|image_pad|><|vision_end|>Describe this image.<|im_end|>
-<|im_start|>assistant
-This image displays a **technical specifications table** comparing two variants of NVIDIA's H100 GPU: the **H100 SXM** and the **H100 NVL**.
-
-The table is organized into rows, each detailing a specific performance or hardware characteristic, with columns showing the corresponding value for each GPU variant.
-
-Here is a breakdown of the key specifications:
-
-**Performance (FLOPS & TOPS):**
-*   **FP64 (Double Precision):** The
-=======================================
-```
-
-## 微调配方
-
-| 模型 | 全参数 SFT | PEFT |
-| --- | --- | --- |
-| 8B | `qwen3_vl_8b_sft_config`(2 卡) | `qwen3_vl_8b_peft_config`(1 卡) |
-| 30B-A3B | `qwen3_vl_30b_a3b_sft_config`(8 卡) | `qwen3_vl_30b_a3b_peft_config`(4 卡) |
-| 235B-A22B | `qwen3_vl_235b_a22b_sft_config`(32 卡) | `qwen3_vl_235b_a22b_peft_config`(16 卡) |
-
-训练前确保设置了以下环境变量:
-1. `HF_TOKEN`:从 HF Hub 下载模型时需要
-2. `HF_HOME`:(可选)避免重复下载模型和数据集
-3. `WANDB_API_KEY`:(可选)启用 WandB 日志
-
-### 预训练
-
-仓库自带的预训练配方使用合成 VLM 数据做环境验证:`qwen3_vl_8b_pretrain_mock_config`、`qwen3_vl_30b_a3b_pretrain_mock_config`、`qwen3_vl_235b_a22b_pretrain_mock_config`。
-
-### 有监督微调(SFT)
-
-[sft_unpacked.sh](sft_unpacked.sh) 是全参数微调、序列不打包、模型并行可配置的脚本。
-[sft.sh](sft.sh) 是全参数微调 + 序列打包的脚本。
-
-### 参数高效微调(PEFT / LoRA)
-
-[peft_unpacked.sh](peft_unpacked.sh) 是 LoRA 微调、序列不打包、张量并行与流水并行可配置的脚本。
-[peft.sh](peft.sh) 是 LoRA 微调 + 序列打包的脚本。
-
-**注意:** LoRA/DoRA 大幅降低显存需求,因此可以用更大的 batch size 和更少的卡。
-
-托管或本地的 Hugging Face 数据、以及完整的单卡 Qwen3-VL 跑通流程,从 [Hugging Face 多模态教程](../../../../tutorials/data/hf-multimodal/README.md) 开始。分片的 WebDataset 数据用 [多模态 Energon 教程](../../../../tutorials/data/energon/README.md)。
-需要一个版本固定、自包含的真实数据例子,参考 [Nemotron Image Training v3 Energon 教程](../../../../tutorials/data/energon/nemotron-image-v3.md)。
-图文 caption 训练的完整示例见 [DataComp Energon 教程](../../../../tutorials/data/datacomp/README.md)。
-
-## 控制 Energon 的视觉 token 计算预算
-
-以下字段属于 `QwenVLEnergonTaskEncoderConfig`,不用于配置 Direct-HF 数据源。
-
-三组彼此独立、都可以从命令行覆盖的开关,共同约束单条样本的 GPU 开销,可叠加使用:
-- **`dataset.task_encoder.min_pixels` / `dataset.task_encoder.max_pixels`** — 图像/视频帧的分辨率上下界(默认 `200704` / `1003520`)。
-- **`dataset.task_encoder.max_num_images` / `dataset.task_encoder.max_num_frames`** — 图像/帧的数量上限(默认 `10` / `60`)。图像超限会**丢弃整条样本**,帧超限只**截断多余帧**。
-- **`dataset.task_encoder.max_visual_tokens`** — 所有图像和帧加起来的视觉 token 总量上限,在缩放之后按 `prod(T,H,W) // merge_size²` 计算(默认 `16384`,设为 `None` 可关闭)。它能兜住前两项漏掉的情况,超限样本会被丢弃。
-
-## 用 Energon 数据集微调
-
-[多模态 Energon 教程](../../../../tutorials/data/energon/README.md) 详述了 tar 成员契约、版本兼容的索引方式、标准的 `ChatMLWebdataset` YAML、单卡不打包的冒烟流程,以及基于 Energon candidate-buffer API 的原生在线序列打包。[peft_energon.sh](peft_energon.sh) 启动的是配合 `vlm_step` 的原生 MBS1 打包路径;先把基线跑通,再去调 `PACKING_BUFFER_SIZE`。
-
-### 预期的训练表现
-我们提供了一份 [Weights & Biases 报告](https://api.wandb.ai/links/nvidia-nemo-fw-public/lczz4ixx),包含预期的 loss 曲线和梯度范数。
+本文只讲一件事:把原始图文数据转成 Qwen 3 VL 训练可用的 Energon 数据集(`{train,val}-shard-*.tar` + `.nv-meta/`),产出目录即训练时的 `dataset.path`。
 
 ## 多图数据集
 
-下面是在单条样本含多张图片的数据集上微调的例子,用的是 [TIGER-Lab/Mantis-Instruct](https://huggingface.co/datasets/TIGER-Lab/Mantis-Instruct) 的一个子集。
+下面是把单条样本含多张图片的数据集转成 Energon 的例子,用的是 [TIGER-Lab/Mantis-Instruct](https://huggingface.co/datasets/TIGER-Lab/Mantis-Instruct) 的一个子集。
 
 1. 从 Hugging Face 下载 TIGER-Lab/Mantis-Instruct 的 `llava_665k_multi` 子集并解压图片目录(注意:需要 44GB 磁盘空间):
 
@@ -295,7 +164,3 @@ AssertionError: Cannot repeat empty dataset indefinitely
 按 `--validation-fraction 0.01` 从 16000 条切出的 146 条 val,对 8 卡 × `num_workers=2`(=16)是够的。
 
 **索引那步需要 `megatron` 模块。** `prepare_mantis_energon.py` 顶部有 `from megatron.bridge.data.energon import prepare_webdataset`。若环境没装 megatron-bridge,可先用 `--skip-energon-prepare` 产出 tar,再到有该模块的环境补索引。
-
-## 评测
-
-敬请期待。
