@@ -20,8 +20,7 @@ export NCCL_NET_GDR_READ=1
 export RCCL_SDMA_COPY_ENABLE=0
 export PYTHONPATH=${MEGATRON_PATH}/hcu_megatron_bridge/src:${MEGATRON_PATH}/3rdparty/Megatron-Bridge/src:${MEGATRON_PATH}/3rdparty/Megatron-Bridge/3rdparty/Megatron-LM:${PYTHONPATH}
 export TRITON_HOME=/tmp
-export ROCSHMEM_MAX_NUM_CONTEXTS=48
-export ROCSHMEM_HEAP_SIZE=2684354560
+export ROCSHMEM_IB_GID_INDEX=3
 
 # These variables should be modified according to the environment of the machine you are using.
 # Auto-detect the IB HCA family and pick the matching profile. Force a specific
@@ -47,7 +46,6 @@ export IB_TYPE
 case "$IB_TYPE" in
   mlnx)
     export NCCL_IB_HCA=mlx5_0:1,mlx5_2:1,mlx5_3:1,mlx5_4:1,mlx5_5:1,mlx5_6:1,mlx5_7:1,mlx5_8:1,mlx5_9:1
-    export ROCSHMEM_ALLOWED_IBV_DEVICES=mlx5_2,mlx5_3,mlx5_4,mlx5_5,mlx5_6,mlx5_7,mlx5_8,mlx5_9
     ;;
   shca)
     export NCCL_IB_HCA=shca_0:1,shca_1:1,shca_2:1,shca_3:1

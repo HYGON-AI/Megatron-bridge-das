@@ -136,6 +136,7 @@ MODEL_CONFIG=(
     model.moe_permute_fusion=true
     model.moe_router_load_balancing_type=seq_aux_loss
     model.moe_router_pre_softmax=true
+    model.moe_token_dispatcher_type=flex
     model.moe_flex_dispatcher_backend=deepep
     model.moe_flex_dispatcher_num_sms=48
 )
@@ -182,6 +183,11 @@ echo "Master:      ${MASTER_ADDR}:${MASTER_PORT}"
 echo "======================================"
 
 # ===================================== Execution =====================================
+# minimax m3 need switch Megatron-LM to main branch before running
+cd ${MEGATRON_PATH}/3rdparty/Megatron-Bridge
+./scripts/switch_mcore.sh main
+cd ${CURRENT_DIR}
+
 env_args=(
     -x PATH
     -x LD_LIBRARY_PATH

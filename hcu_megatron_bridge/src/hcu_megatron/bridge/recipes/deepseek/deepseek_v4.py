@@ -1,3 +1,4 @@
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
 # Copyright (c) 2026 Hygon Information Technology Co., Ltd.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -11,16 +12,18 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+# ruff: noqa: F401
+"""Compatibility aliases for legacy recipe names."""
 
-"""BW1100 recipes for DeepSeek models."""
+from __future__ import annotations
 
-from hcu_megatron.bridge.recipes.deepseek.bw1100.deepseek_v4 import (
-    deepseek_v4_pro_pretrain_bw1100_bf16_config,
-    deepseek_v4_pro_pretrain_8gpu_bw1100_bf16_test_config,
+from hcu_megatron.bridge.recipes.deepseek.bw1000.deepseek_v4 import (
+    deepseek_v4_pro_pretrain_bw1000_bf16_config,
+    deepseek_v4_pro_pretrain_256gpu_bw1000_bf16_test_config,
 )
 
 
 __all__ = [
-    "deepseek_v4_pro_pretrain_bw1100_bf16_config",
-    "deepseek_v4_pro_pretrain_8gpu_bw1100_bf16_test_config",
+    "deepseek_v4_pro_pretrain_bw1000_bf16_config",
+    "deepseek_v4_pro_pretrain_256gpu_bw1000_bf16_test_config",
 ]

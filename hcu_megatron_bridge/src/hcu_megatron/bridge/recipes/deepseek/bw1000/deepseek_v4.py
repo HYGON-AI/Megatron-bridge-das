@@ -121,7 +121,7 @@ def deepseek_v4_pro_pretrain_bw1000_bf16_config() -> ConfigContainer:
     return cfg
 
 
-def deepseek_v4_pro_pretrain_16gpu_bw1000_bf16_test_config() -> ConfigContainer:
+def deepseek_v4_pro_pretrain_256gpu_bw1000_bf16_test_config() -> ConfigContainer:
     """Return the DeepSeek-V4-Pro BW1000 pre-training base config on one node.
 
     DeepSeek-V4 still requires a compatible Megatron-Core development commit;
@@ -133,22 +133,21 @@ def deepseek_v4_pro_pretrain_16gpu_bw1000_bf16_test_config() -> ConfigContainer:
         load_weights=False
     )
 
-    # ========== one node test config ==========
+    # ========== test config ==========
     cfg.model.num_layers = 4
     cfg.model.mtp_num_layers = None
-    cfg.model.num_moe_experts = 4
-    cfg.model.moe_router_topk = 2
     cfg.model.moe_layer_freq = 1
     cfg.model.moe_n_hash_layers = 1
     cfg.model.csa_compress_ratios = [128, 4, 128, 4]
-    # ========== one node test config ==========
+    cfg.optimizer.offload_optimizer_states = True
+    # ========== test config ==========
 
     cfg.model.tensor_model_parallel_size = 1
     cfg.model.pipeline_model_parallel_size = 2
     cfg.model.pipeline_dtype = torch.bfloat16
     cfg.model.virtual_pipeline_model_parallel_size = None
     cfg.model.context_parallel_size = 1
-    cfg.model.expert_model_parallel_size = 4
+    cfg.model.expert_model_parallel_size = 64
     cfg.model.expert_tensor_parallel_size = 1
     cfg.model.sequence_parallel = False
     cfg.model.seq_length = 4096
@@ -174,10 +173,10 @@ def deepseek_v4_pro_pretrain_16gpu_bw1000_bf16_test_config() -> ConfigContainer:
     cfg.model.cross_entropy_loss_fusion = True
     cfg.model.cross_entropy_fusion_impl = "te"
 
-    cfg.model.recompute_granularity = None
+    cfg.model.recompute_granularity = "full"
     cfg.model.recompute_modules = None
-    cfg.model.recompute_method = None
-    cfg.model.recompute_num_layers = None
+    cfg.model.recompute_method = "uniform"
+    cfg.model.recompute_num_layers = 1
     cfg.model.fine_grained_activation_offloading = False
     cfg.model.offload_modules = None
     cfg.model.cuda_graph_impl = "none"

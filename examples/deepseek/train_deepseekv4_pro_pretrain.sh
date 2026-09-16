@@ -5,9 +5,8 @@ CURRENT_DIR=$( cd $( dirname $0 ) && pwd )
 MEGATRON_PATH=$( dirname $( dirname ${CURRENT_DIR}))
 
 # default env
-source ${MEGATRON_PATH}/env/env.sh
-export NVTE_USE_HIPBLASLT_GROUPEDGEMM=1
 export LOCAL_HF_PATH=/path/to/DeepSeek-V4-Pro
+export NVTE_USE_HIPBLASLT_GROUPEDGEMM=1
 
 # ===================================== Launch Mode =====================================
 RECIPE=${1:-}
@@ -23,9 +22,7 @@ RESET="\033[0m"
 # Discover supported recipes from the deepseek module
 SUPPORTED_RECIPES=(
     deepseek_v4_pro_pretrain_bw1000_bf16_config
-    deepseek_v4_pro_pretrain_bw1100_bf16_config
-    deepseek_v4_pro_pretrain_16gpu_bw1000_bf16_test_config
-    deepseek_v4_pro_pretrain_8gpu_bw1100_bf16_test_config
+    deepseek_v4_pro_pretrain_256gpu_bw1000_bf16_test_config
 )
 
 # Validate RECIPE argument
@@ -41,7 +38,7 @@ fi
 
 # ===================================== Multi-node Topology =====================================
 GPUS=${GPUS:-8}
-PORT=${PORT:-25900}
+PORT=${PORT:-12333}
 MASTER_ADDR=127.0.0.1
 MASTER_PORT=29501
 
@@ -78,14 +75,13 @@ DATA_CONFIG=(
 
 # ===================================== Train Config =====================================
 TRAIN_ITERS=1000000
-GLOBAL_BATCH_SIZE=64
+GLOBAL_BATCH_SIZE=256
 MICRO_BATCH_SIZE=1
 
 TRAIN_CONFIG=(
     train.train_iters=${TRAIN_ITERS}
     train.global_batch_size=${GLOBAL_BATCH_SIZE}
     train.micro_batch_size=${MICRO_BATCH_SIZE}
-    train.exit_interval=30
     validation.eval_iters=-1
     ddp.check_for_nan_in_grad=false
 )
@@ -99,11 +95,12 @@ OPTIMIZER_CONFIG=(
 if [[ $RECIPE == *test* ]];then
     TP=1
     PP=2
-    EP=4
+    EP=64
     ETP=1
     CP=1
 
     PARALLEL_CONFIG=(
+        train.exit_interval=30
         model.tensor_model_parallel_size=${TP}
         model.pipeline_model_parallel_size=${PP}
         model.expert_model_parallel_size=${EP}
@@ -133,14 +130,13 @@ MODEL_CONFIG=(
     model.overlap_p2p_comm=true
     model.cross_entropy_loss_fusion=false
     model.cross_entropy_fusion_impl=native
-    model.moe_router_force_load_balancing=true
     model.moe_router_fusion=true
     model.moe_permute_fusion=true
     model.moe_router_load_balancing_type=seq_aux_loss
     model.moe_router_pre_softmax=true
     model.moe_token_dispatcher_type=flex
     model.moe_flex_dispatcher_backend=deepep
-    model.moe_flex_dispatcher_num_sms=48
+    model.moe_flex_dispatcher_num_sms=60
     model.apply_dsa_kernel_fusion=null
     model.dsa_kernel_backend=hip
     model.use_fused_mhc=true
@@ -173,7 +169,7 @@ PROFILING_CONFIG=(
 # ===================================== Summary =====================================
 mkdir -p ${SAVE_DIR}/train_logs
 echo "======================================"
-echo "DeepSeek-V4-Pro pretrain"
+echo -e "${YELLOW}DeepSeek-V4-Pro pretrain${RESET}"
 echo "======================================"
 echo "Mode:        ${MODE}"
 echo "Recipe:      ${RECIPE}"
@@ -192,6 +188,15 @@ echo "======================================"
 cd ${MEGATRON_PATH}/3rdparty/Megatron-Bridge
 ./scripts/switch_mcore.sh dev
 cd ${CURRENT_DIR}
+
+env_args=(
+    -x PATH
+    -x LD_LIBRARY_PATH
+    -x LOCAL_HF_PATH
+    -x NVTE_USE_HIPBLASLT_GROUPEDGEMM
+    -x MASTER_ADDR=${MASTER_ADDR}
+    -x MASTER_PORT=${MASTER_PORT}
+)
 
 case "${MODE}" in
     dryrun)
@@ -252,21 +257,11 @@ case "${MODE}" in
                 --bind-to none \
                 --mca plm_rsh_no_tree_spawn 1 \
                 --mca plm_rsh_args "-p ${PORT}" \
-                -x PATH \
-                -x LIBRARY_PATH \
-                -x LD_LIBRARY_PATH \
-                -x PYTHONPATH \
-                -x HYHAL_PATH \
-                -x ROCM_PATH \
-                -x PYTHONWARNINGS \
-                -x TRANSFORMERS_VERBOSITY \
-                -x LOCAL_HF_PATH \
-                -x NVTE_USE_HIPBLASLT_GROUPEDGEMM \
-                -x MASTER_ADDR=${MASTER_ADDR} \
-                -x MASTER_PORT=${MASTER_PORT} \
+                ${env_args[@]} \
                 bash -c "
+                source /opt/dtk/env.sh && \
                 source ${MEGATRON_PATH}/env/env.sh && \
-                ${REMOTE_CMD}" 2>&1 | tee "${SAVE_DIR}/train_logs/mpi_$(date +%F-%H%M).log"
+                ${REMOTE_CMD}" 2>&1 | tee ${SAVE_DIR}/train_logs/mpi_$(date +%F-%H%M).log
         fi
         echo "======================================"
         echo "Training finished. Checkpoints: ${SAVE_DIR}"
