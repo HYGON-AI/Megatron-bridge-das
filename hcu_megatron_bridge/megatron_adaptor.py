@@ -17,8 +17,12 @@ def patch_features():
         if (
             (getattr(adaptor_args, feature.feature_name, None) and feature.optimization_level == 2)
             or feature.default_patches
-        ):
-            feature.register_patches(MegatronPatchesManager, adaptor_args)
+        ):  
+            try:
+                feature.register_patches(MegatronPatchesManager, adaptor_args)
+            except Exception as e:
+                from .utils import print_only_rank0
+                print_only_rank0(f"[Warning] some feature has not been patched because {e!r}")
 
     MegatronPatchesManager.apply_patches()
 
