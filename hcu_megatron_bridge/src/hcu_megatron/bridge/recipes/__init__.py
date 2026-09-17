@@ -79,3 +79,4 @@ from megatron.bridge.recipes.wan import *
 from megatron.bridge.recipes.wan.h100 import *
 from hcu_megatron.bridge.recipes.deepseek import *
 from hcu_megatron.bridge.recipes.qwen35_vl import *
+from hcu_megatron.bridge.recipes.minimax import *
