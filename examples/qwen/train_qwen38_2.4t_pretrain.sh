@@ -26,7 +26,8 @@ RESET="\033[0m"
 
 # Discover supported recipes from the qwen38 module
 SUPPORTED_RECIPES=(
-    qwen38_2_4t_pretrain_128gpu_bw1000_bf16_config
+    qwen38_text_2_4t_pretrain_bw1000_bf16_config
+    qwen38_text_2_4t_pretrain_128gpu_bw1000_bf16_test_config
 )
 
 # Validate RECIPE argument
@@ -109,11 +110,9 @@ PARALLEL_CONFIG=(
 )
 
 # ===================================== Model Config =====================================
-NUM_LAYERS="${NUM_LAYERS:-4}"
 
 MODEL_CONFIG=(
     model.seq_length=${SEQ_LENGTH}
-    model.num_layers=${NUM_LAYERS}
     model.sequence_parallel=true
     model.moe_token_dispatcher_type=alltoall
     model.cuda_graph_impl=none
@@ -186,6 +185,8 @@ env_args=(
 
 case "${MODE}" in
     dryrun)
+        source /opt/dtk/env.sh
+        source ${MEGATRON_PATH}/env/env.sh
         python ${MEGATRON_PATH}/run_recipe.py \
             --recipe ${RECIPE} \
             --mode pretrain \
