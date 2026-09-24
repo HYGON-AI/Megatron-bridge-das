@@ -359,7 +359,7 @@ def deepseek_v4_flash_pretrain_128gpu_BW1000_bf16_config() -> ConfigContainer:
 
 def deepseek_v4_flash_pretrain_32gpu_BW1000_bf16_test_config() -> ConfigContainer:
     """Return the DeepSeek-V4-Flash BW1000 pre-training base config.
-
+    
     Recommended BW1000 baseline: TP=1, PP=2, EP=16, CP=1.
     """
     use_fused_mhc = deepseek_v4_supports_bw_fused_kernels()
@@ -373,8 +373,7 @@ def deepseek_v4_flash_pretrain_32gpu_BW1000_bf16_test_config() -> ConfigContaine
     cfg.model.mtp_num_layers = None
     cfg.model.moe_layer_freq = 1
     cfg.model.moe_n_hash_layers = 1
-    cfg.model.csa_compress_ratios = [128, 4, 128, 4]
-    cfg.optimizer.offload_optimizer_states = True
+    cfg.model.csa_compress_ratios = [0, 4, 0, 128]
     # ========== test config ==========
 
     cfg.model.tensor_model_parallel_size = 1
@@ -408,8 +407,8 @@ def deepseek_v4_flash_pretrain_32gpu_BW1000_bf16_test_config() -> ConfigContaine
     cfg.model.cross_entropy_loss_fusion = True
     cfg.model.cross_entropy_fusion_impl = "te"
 
-    cfg.model.recompute_granularity = "selective"
-    cfg.model.recompute_modules = ["moe_act", "mhc"]
+    cfg.model.recompute_granularity = None
+    cfg.model.recompute_modules = None
     cfg.model.recompute_method = None
     cfg.model.recompute_num_layers = None
     cfg.model.fine_grained_activation_offloading = False
