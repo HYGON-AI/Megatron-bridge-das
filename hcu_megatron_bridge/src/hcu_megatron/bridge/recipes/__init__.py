@@ -78,6 +78,7 @@ from megatron.bridge.recipes.stepfun.h100 import *
 from megatron.bridge.recipes.wan import *
 from megatron.bridge.recipes.wan.h100 import *
 from hcu_megatron.bridge.recipes.deepseek import *
-from hcu_megatron.bridge.recipes.qwen35_vl import *
+from hcu_megatron.bridge.recipes.glm import *
 from hcu_megatron.bridge.recipes.minimax import *
+from hcu_megatron.bridge.recipes.qwen35_vl import *
 from hcu_megatron.bridge.recipes.qwen38 import *
