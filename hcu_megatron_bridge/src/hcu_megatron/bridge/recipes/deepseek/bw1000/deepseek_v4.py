@@ -12,13 +12,14 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""BW1000 recipes for DeepSeek V4 Pro."""
+"""BW1000 recipes for DeepSeek V4 Pro and Flash."""
 
 import torch
 
 from megatron.bridge import AutoBridge
 from megatron.bridge.models.deepseek.deepseek_v4_bridge import set_deepseek_v4_pipeline_model_parallel_layout
-from megatron.bridge.recipes.common import _pretrain_common
+from megatron.bridge.recipes.common import _pretrain_common, _sft_common
+from megatron.bridge.recipes.utils.dataset_utils import default_squad_config
 from megatron.bridge.recipes.utils.environment_utils import COMMON_RECIPE_ENV_VARS
 from megatron.bridge.recipes.utils.optimizer_utils import distributed_muon_with_cosine_annealing
 from megatron.bridge.training.comm_overlap import CommOverlapConfig
@@ -28,7 +29,7 @@ from hcu_megatron.bridge.models.deepseek.deepseek_v4_bridge import deepseek_v4_s
 
 
 DEEPSEEK_V4_PRO_HF_PATH = "deepseek-ai/DeepSeek-V4-Pro"
-DEEPSEEK_V4_FLASH_HF_PATH = "deepseek-ai/DeepSeek-V4-Flash"
+DEEPSEEK_V4_FLASH_HF_PATH = "deepseek-ai/DeepSeek-V4-Flash-0731"
 
 
 def deepseek_v4_pro_pretrain_bw1000_bf16_config() -> ConfigContainer:
@@ -229,7 +230,7 @@ def deepseek_v4_pro_pretrain_256gpu_bw1000_bf16_test_config() -> ConfigContainer
 def deepseek_v4_flash_pretrain_128gpu_BW1000_bf16_config() -> ConfigContainer:
     """Return the DeepSeek-V4-Flash BW1000 pre-training base config.
 
-    Recommended BW1000 baseline: TP=1, PP=4, EP=32, CP=1.
+    Recommended BW1000 baseline: TP=1, PP=8, EP=16, CP=1.
     """
     use_fused_mhc = deepseek_v4_supports_bw_fused_kernels()
     cfg = _pretrain_common()
@@ -238,11 +239,11 @@ def deepseek_v4_flash_pretrain_128gpu_BW1000_bf16_config() -> ConfigContainer:
     )
 
     cfg.model.tensor_model_parallel_size = 1
-    cfg.model.pipeline_model_parallel_size = 4
+    cfg.model.pipeline_model_parallel_size = 8
     cfg.model.pipeline_dtype = torch.bfloat16
     cfg.model.virtual_pipeline_model_parallel_size = None
     cfg.model.context_parallel_size = 1
-    cfg.model.expert_model_parallel_size = 32
+    cfg.model.expert_model_parallel_size = 16
     cfg.model.expert_tensor_parallel_size = 1
     cfg.model.sequence_parallel = False
     cfg.model.seq_length = 4096
@@ -268,10 +269,10 @@ def deepseek_v4_flash_pretrain_128gpu_BW1000_bf16_config() -> ConfigContainer:
     cfg.model.cross_entropy_loss_fusion = True
     cfg.model.cross_entropy_fusion_impl = "te"
 
-    cfg.model.recompute_granularity = "selective"
-    cfg.model.recompute_modules = ["moe_act", "mhc"]
-    cfg.model.recompute_method = None
-    cfg.model.recompute_num_layers = None
+    cfg.model.recompute_granularity = "full"
+    cfg.model.recompute_modules = None
+    cfg.model.recompute_method = "uniform"
+    cfg.model.recompute_num_layers = 1
     cfg.model.fine_grained_activation_offloading = False
     cfg.model.offload_modules = None
     cfg.model.cuda_graph_impl = "none"
@@ -359,7 +360,7 @@ def deepseek_v4_flash_pretrain_128gpu_BW1000_bf16_config() -> ConfigContainer:
 
 def deepseek_v4_flash_pretrain_32gpu_BW1000_bf16_test_config() -> ConfigContainer:
     """Return the DeepSeek-V4-Flash BW1000 pre-training base config.
-    
+
     Recommended BW1000 baseline: TP=1, PP=2, EP=16, CP=1.
     """
     use_fused_mhc = deepseek_v4_supports_bw_fused_kernels()
@@ -489,6 +490,153 @@ def deepseek_v4_flash_pretrain_32gpu_BW1000_bf16_test_config() -> ConfigContaine
     cfg.ddp.data_parallel_sharding_strategy = "no_shard"
     cfg.mixed_precision = bf16_mixed()
     cfg.mixed_precision.grad_reduce_in_fp32 = True
+    # Keep the complete process environment visible on the recipe.
+    cfg.env_vars = {
+        **COMMON_RECIPE_ENV_VARS,
+    }
+    return cfg
+
+
+# ---------------------------------------------------------------------------
+# Supervised fine-tuning (SFT)
+# ---------------------------------------------------------------------------
+
+
+def deepseek_v4_flash_sft_128gpu_BW1000_bf16_config() -> ConfigContainer:
+    """Return the DeepSeek-V4-Flash BW1000 sft base config.
+    
+    Recommended BW1000 baseline: TP=1, PP=8, EP=16, CP=1.
+    """
+    cfg = _sft_common()
+    cfg.model = AutoBridge.from_hf_pretrained(DEEPSEEK_V4_FLASH_HF_PATH, trust_remote_code=True).to_megatron_provider(
+        load_weights=False
+    )
+
+    # --- parallelism (DSv4 hybrid attention requires TP=1) ---
+    cfg.model.tensor_model_parallel_size = 1
+    cfg.model.pipeline_model_parallel_size = 8
+    cfg.model.expert_model_parallel_size = 16
+    cfg.model.expert_tensor_parallel_size = 1
+    cfg.model.context_parallel_size = 1
+    cfg.model.virtual_pipeline_model_parallel_size = None
+    cfg.model.sequence_parallel = False
+    cfg.model.pipeline_dtype = torch.bfloat16
+    cfg.model.params_dtype = torch.bfloat16
+    cfg.model.seq_length = 4096
+
+    cfg.model.transformer_impl = "transformer_engine"
+    cfg.model.attention_backend = None
+    cfg.model.apply_dsa_kernel_fusion = False
+    cfg.model.apply_rope_fusion = True
+    cfg.model.use_fused_mhc = deepseek_v4_supports_bw_fused_kernels()
+    cfg.model.dsa_indexer_loss_coeff = 0.0
+    cfg.model.dsa_indexer_use_sparse_loss = False
+
+    # --- MoE ---
+    cfg.model.moe_token_dispatcher_type = "alltoall"
+    cfg.model.moe_aux_loss_coeff = 0.0
+    cfg.model.moe_router_force_load_balancing = False
+    cfg.model.cross_entropy_loss_fusion = True
+    cfg.model.cross_entropy_fusion_impl = "te"
+
+    # --- memory (selective recompute, same as pretrain) ---
+    cfg.model.recompute_granularity = "full"
+    cfg.model.recompute_modules = None 
+    cfg.model.recompute_method = "uniform"
+    cfg.model.recompute_num_layers = 1
+    cfg.model.cuda_graph_impl = "none"
+
+    # --- MTP enabled ---
+    if getattr(cfg.model, "mtp_num_layers", None):
+        cfg.model.mtp_loss_scaling_factor = 0.1
+
+    set_deepseek_v4_pipeline_model_parallel_layout(cfg.model)
+
+    # --- tokenizer / dataset (real HF tokenizer; SBHD / unpacked) ---
+    cfg.tokenizer.tokenizer_model = DEEPSEEK_V4_FLASH_HF_PATH
+    cfg.dataset = default_squad_config(seq_length=4096, enable_offline_packing=False)
+
+    # --- robustness defaults ---
+    cfg.comm_overlap = CommOverlapConfig(tp_comm_overlap=False)
+    cfg.comm_overlap.delay_wgrad_compute = False
+    cfg.comm_overlap.overlap_moe_expert_parallel_comm = False
+    cfg.ddp.check_for_nan_in_grad = True
+    cfg.ddp.use_megatron_fsdp = False
+    cfg.dist.enable_megatron_core_experimental = True
+    # Keep the complete process environment visible on the recipe.
+    cfg.env_vars = {
+        **COMMON_RECIPE_ENV_VARS,
+    }
+    return cfg
+
+
+def deepseek_v4_flash_sft_32gpu_BW1000_bf16_test_config() -> ConfigContainer:
+    """Return the DeepSeek-V4-Flash BW1000 sft base config.
+        
+    Recommended BW1000 baseline: TP=1, PP=2, EP=16, CP=1.
+    """
+    cfg = _sft_common()
+    cfg.model = AutoBridge.from_hf_pretrained(DEEPSEEK_V4_FLASH_HF_PATH, trust_remote_code=True).to_megatron_provider(
+        load_weights=False
+    )
+
+    # ========== test config ==========
+    cfg.model.num_layers = 6
+    cfg.model.mtp_num_layers = None
+    cfg.model.moe_layer_freq = 1
+    cfg.model.csa_compress_ratios = [0, 0, 4, 128, 4, 128]
+    # ========== test config ==========
+
+    # --- parallelism (DSv4 hybrid attention requires TP=1) ---
+    cfg.model.tensor_model_parallel_size = 1
+    cfg.model.pipeline_model_parallel_size = 2
+    cfg.model.expert_model_parallel_size = 16
+    cfg.model.expert_tensor_parallel_size = 1
+    cfg.model.context_parallel_size = 1
+    cfg.model.virtual_pipeline_model_parallel_size = None
+    cfg.model.sequence_parallel = False
+    cfg.model.pipeline_dtype = torch.bfloat16
+    cfg.model.params_dtype = torch.bfloat16
+    cfg.model.seq_length = 4096
+
+    cfg.model.transformer_impl = "transformer_engine"
+    cfg.model.attention_backend = None
+    cfg.model.apply_dsa_kernel_fusion = False
+    cfg.model.apply_rope_fusion = True
+    cfg.model.use_fused_mhc = deepseek_v4_supports_bw_fused_kernels()
+    cfg.model.dsa_indexer_loss_coeff = 0.0
+    cfg.model.dsa_indexer_use_sparse_loss = False
+
+    # --- MoE ---
+    cfg.model.moe_token_dispatcher_type = "alltoall"
+    cfg.model.moe_aux_loss_coeff = 0.0
+    cfg.model.moe_router_force_load_balancing = False
+    cfg.model.cross_entropy_loss_fusion = True
+    cfg.model.cross_entropy_fusion_impl = "te"
+
+    cfg.model.recompute_granularity = None
+    cfg.model.recompute_modules = None
+    cfg.model.recompute_method =  None
+    cfg.model.recompute_num_layers = None
+    cfg.model.cuda_graph_impl = "none"
+
+    # --- MTP enabled ---
+    if getattr(cfg.model, "mtp_num_layers", None):
+        cfg.model.mtp_loss_scaling_factor = 0.1
+
+    set_deepseek_v4_pipeline_model_parallel_layout(cfg.model)
+
+    # --- tokenizer / dataset (real HF tokenizer; SBHD / unpacked) ---
+    cfg.tokenizer.tokenizer_model = DEEPSEEK_V4_FLASH_HF_PATH
+    cfg.dataset = default_squad_config(seq_length=4096, enable_offline_packing=False)
+
+    # --- robustness defaults ---
+    cfg.comm_overlap = CommOverlapConfig(tp_comm_overlap=False)
+    cfg.comm_overlap.delay_wgrad_compute = False
+    cfg.comm_overlap.overlap_moe_expert_parallel_comm = False
+    cfg.ddp.check_for_nan_in_grad = True
+    cfg.ddp.use_megatron_fsdp = False
+    cfg.dist.enable_megatron_core_experimental = True
     # Keep the complete process environment visible on the recipe.
     cfg.env_vars = {
         **COMMON_RECIPE_ENV_VARS,

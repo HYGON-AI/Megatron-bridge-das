@@ -9,7 +9,7 @@ MEGATRON_PATH=$( dirname $( dirname ${CURRENT_DIR}))
 
 
 # default env
-export LOCAL_HF_PATH=/path/to/Qwen38_2.4T_A95B
+export LOCAL_HF_PATH=/path/to/Qwen3.8-2.4T-A95B
 export NVTE_USE_HIPBLASLT_GROUPEDGEMM=1
 export GPU_MAX_HW_QUEUES=4
 

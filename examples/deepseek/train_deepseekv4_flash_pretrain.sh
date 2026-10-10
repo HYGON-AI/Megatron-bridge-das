@@ -5,7 +5,7 @@ CURRENT_DIR=$( cd $( dirname $0 ) && pwd )
 MEGATRON_PATH=$( dirname $( dirname ${CURRENT_DIR}))
 
 # default env
-export LOCAL_HF_PATH=/path/to/DeepSeek-V4-Flash
+export LOCAL_HF_PATH=/path/to/DeepSeek-V4-Flash-0731
 export NVTE_USE_HIPBLASLT_GROUPEDGEMM=1
 
 # ===================================== Launch Mode =====================================
