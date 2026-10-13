@@ -17,7 +17,7 @@
 
 from __future__ import annotations
 
-from hcu_megatron.bridge.recipes.glm.bw1000.glm5 import (
+from hcu_megatron.bridge.recipes.glm.bw1000.glm52 import (
     glm52_pretrain_32gpu_bw1000_bf16_test_config,
 )
 

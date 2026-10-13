@@ -13,11 +13,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .glm5 import (
+from .glm52 import (
     glm52_pretrain_32gpu_bw1000_bf16_test_config,
+)
+from .glm53 import (
+    glm53_pretrain_32gpu_bw1000_bf16_test_config,
 )
 
 
 __all__ = [
     "glm52_pretrain_32gpu_bw1000_bf16_test_config",
+    "glm53_pretrain_32gpu_bw1000_bf16_test_config",
 ]

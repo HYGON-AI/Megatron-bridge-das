@@ -14,6 +14,7 @@ Megatron-Bridge-das：基于HCU生态的强化学习训练套件，旨在为HCU�
 |:-------------------: | :-------------------: | :--------: | :---: | :-------: |
 |DeepSeek              | DeepSeek-V4-Flash-0731| ✓          | ✓     |[pretrain](docs/models/deepseek/deepseek-v4-pretrain.md)/[sft](docs/models/deepseek/deepseek-v4-sft.md)|
 |GLM                   | GLM-5.2               | ✓          |       |[pretrain](docs/models/glm/glm5-2.md)|
+|GLM                   | GLM-5.3               | ✓          |       |[pretrain](docs/models/glm/glm5-3.md)|
 |MiniMax               | MiniMax-M3            | ✓          |       |[pretrain](docs/models/minimax/minimax-m3.md)|
 |Qwen                  | Qwen3.5-2B            | ✓          |       |[pretrain](docs/models/qwen/qwen35-vl-bw1000.md)|
 |Qwen                  | Qwen3.5-4B            | ✓          |       |[pretrain](docs/models/qwen/qwen35-vl-bw1000.md)|
