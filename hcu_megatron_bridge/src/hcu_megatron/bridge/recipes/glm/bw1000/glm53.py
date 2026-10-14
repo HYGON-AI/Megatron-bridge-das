@@ -39,11 +39,12 @@ def glm53_pretrain_32gpu_bw1000_bf16_test_config() -> ConfigContainer:
 
     # ========== test config ==========
     cfg.model.num_layers = 4
+    cfg.model.mtp_num_layers = None
     cfg.model.moe_layer_freq = ([0]*3+[1]*1)
     cfg.model.pipeline_model_parallel_layout = "Et*2|t*2L"
     # ========== test config ==========
 
-    cfg.tokenizer.tokenizer_model = os.getenv("LOCAL_HF_PATH", _GLM53_MODEL_ID)
+    cfg.tokenizer.tokenizer_model = _GLM53_MODEL_ID
     cfg.tokenizer.hf_tokenizer_kwargs = {"revision": _GLM53_MODEL_REVISION}
 
     cfg.model.seq_length = 4096
@@ -55,7 +56,6 @@ def glm53_pretrain_32gpu_bw1000_bf16_test_config() -> ConfigContainer:
     cfg.model.microbatch_group_size_per_vp_stage = 16
 
     cfg.model.dsa_kernel_backend = "cudnn"
-    cfg.model.mtp_num_layers = None
     cfg.model.calculate_per_token_loss = True
     cfg.model.cross_entropy_loss_fusion = False
     cfg.model.cross_entropy_fusion_impl = "native"
