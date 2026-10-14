@@ -12,7 +12,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""BW1000 recipes for GLM-5.2."""
+"""BW1000 recipes for GLM-5.3."""
 
 from __future__ import annotations
 import os
@@ -25,38 +25,37 @@ from megatron.bridge.training.config import ConfigContainer
 from megatron.bridge.training.mixed_precision import bf16_mixed
 
 
-_GLM52_MODEL_ID = "zai-org/GLM-5.2"
-_GLM52_MODEL_REVISION = "4d67f66cc64d3219133b767c253b2ad1425c6c88"  # pragma: allowlist secret
+_GLM53_MODEL_ID = "zai-org/GLM-5.3"
+_GLM53_MODEL_REVISION = "aca966e4e02791568aa6a4ced368624b3d897f42"  # pragma: allowlist secret
 
 
-def glm52_pretrain_32gpu_bw1000_bf16_test_config() -> ConfigContainer:
-    """GLM-5.2 bounded pretraining on 32 bw1000 GPUs."""
+def glm53_pretrain_32gpu_bw1000_bf16_test_config() -> ConfigContainer:
+    """GLM-5.3 bounded pretraining on 32 bw1000 GPUs."""
     cfg = _pretrain_common()
 
-    cfg.model = AutoBridge.from_hf_pretrained(_GLM52_MODEL_ID).to_megatron_provider(
+    cfg.model = AutoBridge.from_hf_pretrained(_GLM53_MODEL_ID).to_megatron_provider(
         load_weights=False
     )
 
     # ========== test config ==========
     cfg.model.num_layers = 4
+    cfg.model.mtp_num_layers = None
     cfg.model.moe_layer_freq = ([0]*3+[1]*1)
+    cfg.model.pipeline_model_parallel_layout = "Et*2|t*2L"
     # ========== test config ==========
 
-    cfg.tokenizer.tokenizer_model = os.getenv("LOCAL_HF_PATH", _GLM52_MODEL_ID)
-    cfg.tokenizer.hf_tokenizer_kwargs = {"revision": _GLM52_MODEL_REVISION}
+    cfg.tokenizer.tokenizer_model = _GLM53_MODEL_ID
+    cfg.tokenizer.hf_tokenizer_kwargs = {"revision": _GLM53_MODEL_REVISION}
 
     cfg.model.seq_length = 4096
     cfg.model.tensor_model_parallel_size = 1
     cfg.model.pipeline_model_parallel_size = 13
-    cfg.model.virtual_pipeline_model_parallel_size = None
-    cfg.model.pipeline_model_parallel_layout = "Et*2|t*2L"
     cfg.model.context_parallel_size = 1
     cfg.model.expert_model_parallel_size = 32
     cfg.model.expert_tensor_parallel_size = 1
     cfg.model.microbatch_group_size_per_vp_stage = 16
 
     cfg.model.dsa_kernel_backend = "cudnn"
-    cfg.model.mtp_num_layers = None
     cfg.model.calculate_per_token_loss = True
     cfg.model.cross_entropy_loss_fusion = False
     cfg.model.cross_entropy_fusion_impl = "native"
@@ -107,5 +106,5 @@ def glm52_pretrain_32gpu_bw1000_bf16_test_config() -> ConfigContainer:
 
 
 __all__ = [
-    "glm52_pretrain_64gpu_bw1000_bf16_test_config",
+    "glm53_pretrain_32gpu_bw1000_bf16_test_config",
 ]

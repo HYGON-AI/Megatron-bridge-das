@@ -83,6 +83,7 @@ TRAIN_CONFIG=(
     train.micro_batch_size=${MICRO_BATCH_SIZE}
     validation.eval_iters=-1
     ddp.check_for_nan_in_grad=false
+    tokenizer.tokenizer_model=${LOCAL_HF_PATH}
 )
 
 # ===================================== Optimizer Config =====================================
