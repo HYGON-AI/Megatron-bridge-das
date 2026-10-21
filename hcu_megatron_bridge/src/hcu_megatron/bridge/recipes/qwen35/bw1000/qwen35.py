@@ -28,6 +28,8 @@ from megatron.bridge.training.mixed_precision import bf16_mixed
 
 
 _QWEN35_35B_A3B_BASE = "Qwen/Qwen3.5-35B-A3B"
+_QWEN35_397B_A17B_BASE = "Qwen/Qwen3.5-397B-A17B-Base"
+
 
 
 def qwen35_text_35b_a3b_pretrain_32gpu_bw1000_bf16_config() -> ConfigContainer:
@@ -54,6 +56,103 @@ def qwen35_text_35b_a3b_pretrain_32gpu_bw1000_bf16_config() -> ConfigContainer:
     cfg.model.expert_model_parallel_size = 8
     cfg.model.expert_tensor_parallel_size = 1
     cfg.model.sequence_parallel = False
+    cfg.model.seq_length = 4096
+    cfg.model.init_method_std = 0.02
+    cfg.train.global_batch_size = 512
+    # MBS4 is suitable for force-balanced throughput benchmarking, but OOMs
+    # with learned routing. MBS1 was validated with real RP2 data on GB200.
+    cfg.train.micro_batch_size = 1
+
+    cfg.model.transformer_impl = "transformer_engine"
+    cfg.model.bias_activation_fusion = True
+    cfg.model.moe_router_fusion = True
+    cfg.model.moe_permute_fusion = True
+    cfg.model.moe_grouped_gemm = True
+    cfg.model.cross_entropy_loss_fusion = True
+    # Keep the library-safe native implementation instead of the performance
+    # harness's TE cross-entropy path, which currently warns about stability.
+    cfg.model.cross_entropy_fusion_impl = "native"
+    cfg.model.apply_rope_fusion = True
+
+    cfg.model.recompute_granularity = None
+    cfg.model.recompute_method = None
+    cfg.model.recompute_num_layers = None
+    cfg.model.recompute_modules = None
+    cfg.model.fine_grained_activation_offloading = False
+    cfg.model.offload_modules = None
+
+    # Fixed-length text batches can use the scopes that the VLM recipe must
+    # disable for variable-length multimodal inputs.
+    cfg.model.cuda_graph_impl = "transformer_engine"
+    cfg.model.cuda_graph_scope = None
+    cfg.model.cuda_graph_modules = ["attn", "moe_router", "moe_preprocess"]
+    cfg.model.cuda_graph_warmup_steps = 3
+    cfg.model.use_te_rng_tracker = True
+    cfg.rng.te_rng_tracker = True
+
+    cfg.model.moe_token_dispatcher_type = "flex"
+    cfg.model.moe_flex_dispatcher_backend = "hybridep"
+    cfg.model.moe_flex_dispatcher_num_sms = 32
+    cfg.model.moe_hybridep_num_sms = None
+    cfg.model.moe_router_dtype = "fp32"
+    cfg.model.moe_shared_expert_overlap = False
+    cfg.model.moe_router_force_load_balancing = False
+    cfg.model.moe_router_padding_for_fp8 = False
+
+    cfg.optimizer.use_precision_aware_optimizer = False
+    cfg.optimizer.main_grads_dtype = torch.float32
+    cfg.optimizer.main_params_dtype = torch.float32
+    cfg.optimizer.exp_avg_dtype = torch.float32
+    cfg.optimizer.exp_avg_sq_dtype = torch.float32
+    cfg.optimizer.overlap_param_gather_with_optimizer_step = False
+
+    cfg.ddp.overlap_grad_reduce = False
+    cfg.ddp.overlap_param_gather = False
+    cfg.ddp.check_for_nan_in_grad = True
+    cfg.ddp.use_distributed_optimizer = True
+    cfg.ddp.use_megatron_fsdp = False
+
+    cfg.comm_overlap = CommOverlapConfig(
+        tp_comm_overlap=True,
+        overlap_grad_reduce=False,
+        overlap_param_gather=False,
+    )
+    return cfg
+
+def qwen35_text_397b_a17b_pretrain_64gpu_bw1000_bf16_test_config() -> ConfigContainer:
+    """Return a pre-training config for Qwen3.5-text-only 397B-A17B (MoE)."""
+    cfg = _pretrain_common()
+
+    text_config = AutoConfig.from_pretrained(_QWEN35_397B_A17B_BASE).text_config
+    # The nested text config intentionally omits ``architectures``. AutoBridge
+    # needs it to select the registered causal-LM bridge instead of the VLM.
+    text_config.architectures = ["Qwen3_5MoeForCausalLM"]
+
+    # ========== test config ==========
+    text_config.num_hidden_layers = 8
+    text_config.layer_types = text_config.layer_types[:text_config.num_hidden_layers]  
+    # ========== test config ========== 
+    cfg.model = AutoBridge.from_hf_config(text_config).to_megatron_provider(load_weights=False)
+    cfg.tokenizer.tokenizer_model = _QWEN35_397B_A17B_BASE
+
+    # ========== test config ==========
+    cfg.model.num_layers = 8
+    # ========== test config ==========
+
+    cfg.dataset.seq_length = 4096
+    cfg.dataset.blend = None
+    cfg.dataset.num_workers = 8
+
+    cfg.model.tensor_model_parallel_size = 1
+    cfg.model.pipeline_model_parallel_size = 4
+    cfg.model.pipeline_dtype = torch.bfloat16
+    cfg.model.virtual_pipeline_model_parallel_size = None
+    cfg.model.context_parallel_size = 1
+    # cfg.model.calculate_per_token_loss = True
+    cfg.model.sequence_parallel = True
+    cfg.model.seq_length = 4096
+    cfg.model.expert_model_parallel_size = 16
+
     cfg.model.seq_length = 4096
     cfg.model.init_method_std = 0.02
     cfg.train.global_batch_size = 512

@@ -20,9 +20,11 @@ This module re-exports AutoBridge-based pretrain config helpers for Qwen35.
 
 from .qwen35 import (
     qwen35_text_35b_a3b_pretrain_32gpu_bw1000_bf16_config,
+    qwen35_text_397b_a17b_pretrain_64gpu_bw1000_bf16_test_config,
 )
 
 
 __all__ = [
     "qwen35_text_35b_a3b_pretrain_32gpu_bw1000_bf16_config",
+    "qwen35_text_397b_a17b_pretrain_64gpu_bw1000_bf16_test_config",
 ]
