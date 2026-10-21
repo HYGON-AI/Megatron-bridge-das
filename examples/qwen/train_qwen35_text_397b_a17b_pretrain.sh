@@ -6,7 +6,7 @@ MEGATRON_PATH=$( dirname $( dirname ${CURRENT_DIR}))
 
 
 # default env
-# export LOCAL_HF_PATH=/path/to/Qwen38_2.4T_A95B
+# export LOCAL_HF_PATH=/path/to/Qwen35_397B_A17B
 export NVTE_USE_HIPBLASLT_GROUPEDGEMM=1
 export GPU_MAX_HW_QUEUES=4
 
@@ -14,7 +14,7 @@ export GPU_MAX_HW_QUEUES=4
 RECIPE=${1:-}
 MODE=${2:-}
 HOSTFILE=${3:-}
-NODES=${4:-8}
+NODES=${4:-}
 PROFILING=""
 
 RED="\033[31m"
