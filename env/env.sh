@@ -18,7 +18,7 @@ export NCCL_MIN_NCHANNELS=32
 export NCCL_NET_GDR_LEVEL=4
 export NCCL_NET_GDR_READ=1
 export RCCL_SDMA_COPY_ENABLE=0
-export PYTHONPATH=${MEGATRON_PATH}/hcu_megatron_bridge/src:${MEGATRON_PATH}/3rdparty/Megatron-Bridge/src:${MEGATRON_PATH}/3rdparty/Megatron-Bridge/3rdparty/Megatron-LM:${PYTHONPATH}
+export PYTHONPATH=${MEGATRON_PATH}/hcu_megatron_bridge/src:${MEGATRON_PATH}/3rdparty/Megatron-Bridge/src:${MEGATRON_PATH}/3rdparty/Megatron-LM-dsv41:${PYTHONPATH}
 export TRITON_HOME=/tmp
 export ROCSHMEM_IB_GID_INDEX=3
 

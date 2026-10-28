@@ -3,7 +3,7 @@
 
 from typing import Optional
 
-_SUPPORTED_COMPUTE_CAPABILITY = (9, 3)
+_MINIMUM_COMPUTE_CAPABILITY_MAJOR = 9
 _UNINITIALIZED = object()
 # Lazily resolved ``cudnn.csa.compressor`` module: ``_UNINITIALIZED`` -> not probed yet,
 # ``None`` -> probed and unavailable (reason kept in ``_frontend_error``).

@@ -36,6 +36,7 @@ from megatron.core.fusions.fused_mhc_kernels import (
     _torch_proj_rms_compute_h,
     is_cutile_available,
     FusedHAggregate,
+    FusedHAggregateInto,
     FusedHPostBDA,
 )
 if is_cutile_available():
@@ -82,6 +83,7 @@ try:
     from fused_mhc import (
         FusedSinkhorn as HipFusedSinkhorn,
         FusedHAggregate as HipFusedHAggregate,
+        FusedHAggregateInto as HipFusedHAggregateInto,
         FusedHPostBDA as HipFusedHPostBDA,
         FusedProjRmsComputeH as HipFusedProjRmsComputeH,
     )
@@ -172,6 +174,8 @@ def _mhc_backend_status() -> Tuple[str, bool]:
 def fused_sinkhorn(input_logits: Tensor, num_iterations: int, eps: float = 1e-6) -> Tensor:
     """Project logits to a doubly stochastic matrix using Hip, Triton, cuTile, then torch."""
     _raise_mhc_backend_validation_error()
+    if not input_logits.is_cuda or input_logits.numel() == 0:
+        return native_sinkhorn(input_logits, num_iterations, eps)
     triton_sinkhorn = _get_triton_sinkhorn()
     if is_hip_available():
         return HipFusedSinkhorn.apply(input_logits, num_iterations, eps)
@@ -185,11 +189,23 @@ def fused_sinkhorn(input_logits: Tensor, num_iterations: int, eps: float = 1e-6)
 def fused_h_aggregate(x: Tensor, h_pre: Tensor) -> Tensor:
     """Weighted n-stream to 1-stream aggregation using Hip/Triton/cuTile/torch."""
     _raise_mhc_backend_validation_error()
-    if is_hip_available():
+    if x.is_cuda and x.numel() and is_hip_available():
         return HipFusedHAggregate.apply(x, h_pre)
-    if _TRITON_AVAILABLE or is_cutile_available():
+    if x.is_cuda and x.numel() and (_TRITON_AVAILABLE or is_cutile_available()):
         return FusedHAggregate.apply(x, h_pre)
     return native_h_aggregate(x, h_pre)
+
+
+def fused_h_aggregate_into(x: Tensor, h_pre: Tensor, out: Tensor) -> Tensor:
+    """Weighted aggregation that writes directly to fixed-address ``out``."""
+    _raise_mhc_backend_validation_error()
+    if x.is_cuda and x.numel() and is_hip_available():
+        return HipFusedHAggregateInto.apply(x, h_pre, out)
+    if x.is_cuda and x.numel() and (_TRITON_AVAILABLE or is_cutile_available()):
+        return FusedHAggregateInto.apply(x, h_pre, out)
+    from megatron.core.transformer.hyper_connection import native_h_aggregate_into
+
+    return native_h_aggregate_into(x, h_pre, out)
 
 
 def fused_h_post_bda(
@@ -197,9 +213,9 @@ def fused_h_post_bda(
 ) -> Tensor:
     """Fused H_res.T @ residual + H_post * (x + bias)."""
     _raise_mhc_backend_validation_error()
-    if is_hip_available():
+    if x.is_cuda and x.numel() and is_hip_available():
         return HipFusedHPostBDA.apply(h_res, original_residual, h_post, x, bias)
-    if _TRITON_AVAILABLE or is_cutile_available():
+    if x.is_cuda and x.numel() and (_TRITON_AVAILABLE or is_cutile_available()):
         return FusedHPostBDA.apply(h_res, original_residual, h_post, x, bias)
     return native_h_post_bda(h_res, original_residual, h_post, x, bias)
 
@@ -214,17 +230,33 @@ def fused_proj_rms_compute_h(
     n: int,
     eps: float = 1e-6,
     compute_h_eps: float = 1e-6,
+    *,
+    eps_inside_sqrt: bool = False,
 ) -> Tuple[Tensor, Tensor, Tensor, Tensor]:
-    """Projection + RMS norm + compute_h split outputs using hip, cuTile, then torch."""
+    """Projection + RMS norm + compute_h split outputs using hip, cuTile, then torch.
+
+    ``eps_inside_sqrt`` selects single-pass mHC normalization. In that mode the
+    fourth output is ``sqrt(mean(x**2) + eps)``; otherwise it is the unregularized
+    RMS and epsilon is added after the square root, preserving legacy mHC.
+    """
     _raise_mhc_backend_validation_error()
-    if is_hip_available():
+    if x.is_cuda and x.numel() and is_hip_available():
         return HipFusedProjRmsComputeH.apply(
             x, weight, alpha_pre, alpha_post, alpha_res, bias, n, eps, compute_h_eps
         )
-    if is_cutile_available():
+    if x.is_cuda and x.numel() and is_cutile_available():
         return CutileProjRmsComputeH.apply(
-            x, weight, alpha_pre, alpha_post, alpha_res, bias, n, eps, compute_h_eps
+            x,
+            weight,
+            alpha_pre,
+            alpha_post,
+            alpha_res,
+            bias,
+            n,
+            eps,
+            compute_h_eps,
+            eps_inside_sqrt,
         )
     return _torch_proj_rms_compute_h(
-        x, weight, alpha_pre, alpha_post, alpha_res, bias, n, eps, compute_h_eps
+        x, weight, alpha_pre, alpha_post, alpha_res, bias, n, eps, compute_h_eps, eps_inside_sqrt
     )

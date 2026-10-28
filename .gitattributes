@@ -1,0 +1,54 @@
+# Keep every text file at LF in the repository *and* in the working tree.
+#
+# Git for Windows installs with core.autocrlf=true, so without this file a Windows
+# checkout turns shell scripts into CRLF and Linux then fails with
+# "$'\r': command not found" / "bad interpreter: /bin/bash^M".
+* text=auto eol=lf
+
+# Scripts: never CRLF, everywhere.
+*.sh       text eol=lf
+*.bash     text eol=lf
+*.py       text eol=lf
+*.pyi      text eol=lf
+*.md       text eol=lf
+*.rst      text eol=lf
+*.txt      text eol=lf
+*.json     text eol=lf
+*.jsonl    text eol=lf
+*.yaml     text eol=lf
+*.yml      text eol=lf
+*.toml     text eol=lf
+*.cfg      text eol=lf
+*.ini      text eol=lf
+*.conf     text eol=lf
+*.in       text eol=lf
+*.c        text eol=lf
+*.h        text eol=lf
+*.cu       text eol=lf
+*.cpp      text eol=lf
+*.hpp      text eol=lf
+Makefile   text eol=lf
+Dockerfile text eol=lf
+
+# Windows-only formats keep CRLF so native tools stay happy.
+*.bat      text eol=crlf
+*.cmd      text eol=crlf
+*.ps1      text eol=crlf
+
+# Binaries: never diff, never convert.
+*.pyc        binary
+*.so         binary
+*.o          binary
+*.a          binary
+*.bin        binary
+*.pt         binary
+*.pth        binary
+*.ckpt       binary
+*.safetensors binary
+*.png        binary
+*.jpg        binary
+*.jpeg       binary
+*.gif        binary
+*.zip        binary
+*.gz         binary
+*.tar        binary

@@ -34,6 +34,7 @@ class HyperConnectionFeature(AbstractFeature):
             _mhc_backend_status, 
             fused_sinkhorn, 
             fused_h_aggregate, 
+            fused_h_aggregate_into,
             fused_h_post_bda, 
             fused_proj_rms_compute_h,
         )
@@ -44,6 +45,8 @@ class HyperConnectionFeature(AbstractFeature):
                                     fused_sinkhorn)
         patch_manager.register_patch('megatron.core.fusions.fused_mhc_kernels.fused_h_aggregate', 
                                     fused_h_aggregate)
+        patch_manager.register_patch('megatron.core.fusions.fused_mhc_kernels.fused_h_aggregate_into',
+                                    fused_h_aggregate_into)
         patch_manager.register_patch('megatron.core.fusions.fused_mhc_kernels.fused_h_post_bda',
                                     fused_h_post_bda)
         patch_manager.register_patch('megatron.core.fusions.fused_mhc_kernels.fused_proj_rms_compute_h',

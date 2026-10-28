@@ -88,3 +88,64 @@ def profiler_annotate(message: Optional[Union[str, Callable]] = None) -> Callabl
         return decorator(target_func)
 
     return decorator
+
+
+# ============================ model dump (debug) ============================
+# Temporary debug helper: print the constructed model structure at startup.
+# Used by run_recipe.py (main() -> _register_model_dump_hook(recipe)).
+# Delete this block and that call site to restore the original behavior.
+def _dump_model_structure(model, *, name="model", max_lines=400):
+    """Print a Megatron model structure. ``model`` may be one module or a PP stage list."""
+    wrappers = []
+    try:
+        from megatron.core.transformer.module import Float16Module
+
+        wrappers.append(Float16Module)
+    except Exception:
+        pass
+    for module_name, class_name in (
+        ("megatron.core.distributed", "DistributedDataParallel"),
+        ("torch.nn.parallel", "DistributedDataParallel"),
+    ):
+        try:
+            module = __import__(module_name, fromlist=[class_name])
+            wrappers.append(getattr(module, class_name))
+        except Exception:
+            pass
+
+    chunks = model if isinstance(model, (list, tuple)) else [model]
+    for index, chunk in enumerate(chunks):
+        module = chunk
+        while wrappers and isinstance(module, tuple(wrappers)):
+            module = module.module
+        text = repr(module)
+        lines = text.splitlines()
+        if len(lines) > max_lines:
+            body = "\n".join(lines[:max_lines]) + "\n... <truncated %d more lines>" % (
+                len(lines) - max_lines
+            )
+        else:
+            body = text
+        print_only_rank0("\n===== %s[%d] : %s =====\n%s" % (name, index, type(module).__name__, body))
+    return model
+
+
+def _register_model_dump_hook(cfg):
+    """Attach _dump_model_structure to the model config's pre-wrap hooks."""
+    model_cfg = getattr(cfg, "model", None)
+    if model_cfg is None:
+        print_only_rank0("[model-dump] WARNING: cfg.model is missing, skip model dump")
+        return
+    hooks = getattr(model_cfg, "pre_wrap_hooks", None)
+    if hooks is not None:
+        if _dump_model_structure not in hooks:
+            hooks.append(_dump_model_structure)
+        print_only_rank0("[model-dump] registered pre-wrap hook on %s" % type(model_cfg).__name__)
+        return
+    register = getattr(model_cfg, "register_pre_wrap_hook", None)
+    if callable(register):
+        register(_dump_model_structure)
+        print_only_rank0("[model-dump] registered pre-wrap hook via register_pre_wrap_hook")
+        return
+    print_only_rank0("[model-dump] WARNING: model config supports no pre-wrap hook, skip model dump")
+# ========================== end model dump (debug) ==========================

@@ -125,6 +125,7 @@ from megatron.bridge.recipes.utils.dataset_utils import (  # noqa: E402
     dataset_train_mode,
 )
 
+from hcu_megatron_bridge.utils import _register_model_dump_hook  # noqa: E402
 
 if TYPE_CHECKING:
     from megatron.bridge.training.config import ConfigContainer
@@ -520,6 +521,8 @@ def main(argv: list[str] | None = None) -> None:
 
     step_func_name = args.step_func or recipe_step(recipe_name)
     forward_step = load_forward_step(step_func_name, mode=step_mode)
+    _register_model_dump_hook(recipe)
+
     run_config(
         config=recipe,
         mode=execution_mode,

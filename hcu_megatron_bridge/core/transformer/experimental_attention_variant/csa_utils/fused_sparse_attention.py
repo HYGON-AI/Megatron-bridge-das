@@ -6,9 +6,9 @@ from typing import Optional, Tuple
 import torch
 from torch import Tensor
 
-import megatron.core.transformer.experimental_attention_variant.csa_kernels as _upstream
-from megatron.core.transformer.experimental_attention_variant.csa_kernels import (
-    _get_topk_alignment,
+import megatron.core.transformer.experimental_attention_variant.csa_utils.fused_sparse_attention as _upstream
+from megatron.core.transformer.experimental_attention_variant.csa_utils.fused_sparse_attention import (
+    get_flash_mla_topk_alignment,
 )
 
 _flash_mla_sparse_fwd = None
@@ -76,7 +76,7 @@ def _csa_fwd_flash_mla(
 
     _total_S_q, _H, _D = q.shape
     TopK = topk_idxs.shape[-1]
-    topk_align = _get_topk_alignment()
+    topk_align = get_flash_mla_topk_alignment()
     TopK_padded = (TopK + topk_align - 1) // topk_align * topk_align
     if TopK_padded != TopK:
         pad_width = TopK_padded - TopK

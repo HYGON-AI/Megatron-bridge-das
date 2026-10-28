@@ -50,11 +50,11 @@ class DSAFeature(AbstractFeature):
             _dsa_fwd_flash_mla,
             _ensure_dsa_namespace_hip,  
         )
-        from ...core.transformer.experimental_attention_variant.csa_fused_compressor import (
-            _SUPPORTED_COMPUTE_CAPABILITY, 
+        from ...core.transformer.experimental_attention_variant.csa_utils.fused_compressor import (
+            _MINIMUM_COMPUTE_CAPABILITY_MAJOR, 
             _get_frontend,
         )
-        from ...core.transformer.experimental_attention_variant.csa_kernels import (
+        from ...core.transformer.experimental_attention_variant.csa_utils.fused_sparse_attention import (
             _csa_fwd_flash_mla,
             _ensure_dsa_namespace,
         )
@@ -71,11 +71,37 @@ class DSAFeature(AbstractFeature):
                                     _dsa_fwd_flash_mla)
         patch_manager.register_patch('megatron.core.transformer.experimental_attention_variant.dsa_cudnn_kernels._ensure_dsa_namespace',
                                     _ensure_dsa_namespace_hip)
-        patch_manager.register_patch('megatron.core.transformer.experimental_attention_variant.csa_fused_compressor._SUPPORTED_COMPUTE_CAPABILITY',
-                                    _SUPPORTED_COMPUTE_CAPABILITY)
-        patch_manager.register_patch('megatron.core.transformer.experimental_attention_variant.csa_fused_compressor._get_frontend',
+        patch_manager.register_patch('megatron.core.transformer.experimental_attention_variant.csa_utils.fused_compressor._MINIMUM_COMPUTE_CAPABILITY_MAJOR',
+                                    _MINIMUM_COMPUTE_CAPABILITY_MAJOR)
+        patch_manager.register_patch('megatron.core.transformer.experimental_attention_variant.csa_utils.fused_compressor._get_frontend',
                                     _get_frontend)
-        patch_manager.register_patch('megatron.core.transformer.experimental_attention_variant.csa_kernels._csa_fwd_flash_mla',
+        patch_manager.register_patch('megatron.core.transformer.experimental_attention_variant.csa_utils.fused_sparse_attention._csa_fwd_flash_mla',
                                     _csa_fwd_flash_mla)
-        patch_manager.register_patch('megatron.core.transformer.experimental_attention_variant.csa_kernels._ensure_dsa_namespace',
+        patch_manager.register_patch('megatron.core.transformer.experimental_attention_variant.csa_utils.fused_sparse_attention._ensure_dsa_namespace',
                                     _ensure_dsa_namespace)
+
+
+        # V4.1 hard-codes dsa_kernel_backend in ("none", "cudnn"); HCU adds 'hip'.
+        # Run the original validator with an allowed placeholder so every other V4.1
+        # rule is still enforced, then restore the real backend for kernel dispatch.
+        from megatron.core.transformer.transformer_config import TransformerConfig
+
+        _original_validate_dsv41_config = TransformerConfig._validate_dsv41_config
+        _V41_ALLOWED_BACKENDS = ("none", "cudnn")
+
+        def _validate_dsv41_config_hcu(self):
+            backend = self.dsa_kernel_backend
+            if backend in _V41_ALLOWED_BACKENDS:
+                _original_validate_dsv41_config(self)
+                return
+            # 'none' short-circuits the fused-kernel dependency probe that
+            # _validate_dsv41_config performs internally (line ~4381), while
+            # still satisfying its backend-name whitelist.
+            self.dsa_kernel_backend = "none"
+            try:
+                _original_validate_dsv41_config(self)
+            finally:
+                self.dsa_kernel_backend = backend
+
+        patch_manager.register_patch('megatron.core.transformer.transformer_config.TransformerConfig._validate_dsv41_config',
+                                    _validate_dsv41_config_hcu)

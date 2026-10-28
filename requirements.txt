@@ -10,7 +10,7 @@ blobfile
 flux
 tiktoken
 nvidia-modelopt
-flash-linear-attention==0.5.1
+flash-linear-attention==0.5.2
 hydra-core
 omegaconf
 nltk

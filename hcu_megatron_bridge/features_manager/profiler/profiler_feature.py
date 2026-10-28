@@ -59,6 +59,8 @@ class ProfilerFeature(AbstractFeature):
             'fused_mhc.FusedSinkhorn.backward': 'HipFusedSinkhorn::backward',
             'fused_mhc.FusedHAggregate.forward': 'HipFusedHAggregate::forward',
             'fused_mhc.FusedHAggregate.backward': 'HipFusedHAggregate::backward',
+            'fused_mhc.FusedHAggregateInto.forward': 'HipFusedHAggregateInto::forward',
+            'fused_mhc.FusedHAggregateInto.backward': 'HipFusedHAggregateInto::backward',
             'fused_mhc.FusedHPostBDA.forward': 'HipFusedHPostBDA::forward',
             'fused_mhc.FusedHPostBDA.backward': 'HipFusedHPostBDA::backward',
             'fused_mhc.FusedProjRmsComputeH.forward': 'HipFusedProjRmsComputeH::forward',
@@ -82,10 +84,10 @@ class ProfilerFeature(AbstractFeature):
             'megatron.core.fusions.fused_mhc_kernels._cutile_fused_compute_h_proj_rms_bwd': 'CutileFusedProjRmsComputeH::backward',
 
             # fused dsa
-            'megatron.core.transformer.experimental_attention_variant.csa_kernels.CSASparseAttnFunc.forward': 'CSASparseAttnFunc::fused_compressed_sparse_attn_forward',
-            'megatron.core.transformer.experimental_attention_variant.csa_kernels.CSASparseAttnFunc.backward': 'CSASparseAttnFunc::fused_compressed_sparse_attn_backward',
-            'megatron.core.transformer.experimental_attention_variant.csa_kernels.FusedCSAIndexerSparseAttnFunc.forward': 'FusedCSAIndexerSparseAttnFunc::fused_compressed_sparse_attn_forward',
-            'megatron.core.transformer.experimental_attention_variant.csa_kernels.FusedCSAIndexerSparseAttnFunc.backward': 'FusedCSAIndexerSparseAttnFunc::fused_compressed_sparse_attn_backward',
+            'megatron.core.transformer.experimental_attention_variant.csa_utils.fused_sparse_attention.CSASparseAttnFunc.forward': 'CSASparseAttnFunc::fused_compressed_sparse_attn_forward',
+            'megatron.core.transformer.experimental_attention_variant.csa_utils.fused_sparse_attention.CSASparseAttnFunc.backward': 'CSASparseAttnFunc::fused_compressed_sparse_attn_backward',
+            'megatron.core.transformer.experimental_attention_variant.csa_utils.fused_sparse_attention.FusedCSAIndexerSparseAttnFunc.forward': 'FusedCSAIndexerSparseAttnFunc::fused_compressed_sparse_attn_forward',
+            'megatron.core.transformer.experimental_attention_variant.csa_utils.fused_sparse_attention.FusedCSAIndexerSparseAttnFunc.backward': 'FusedCSAIndexerSparseAttnFunc::fused_compressed_sparse_attn_backward',
         }
 
         for path, message in targets.items():
