@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
 """Convert the Tulu 3 SFT mixture parquet shards to prompt-completion JSONL.
 
 The source rows contain ``id``, ``messages`` and ``source``. The output keeps

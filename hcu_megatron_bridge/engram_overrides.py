@@ -1,4 +1,5 @@
 # Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
 """Apply DeepSeek-V4.1 Engram CLI overrides that the config schema does not declare.
 
 ``process_config_with_overrides()`` turns the ConfigContainer dataclass into a **struct**

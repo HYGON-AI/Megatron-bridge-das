@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
 """Convert Chinese-DeepSeek-R1-Distill-SFT into local-jsonl SFT splits.
 
 Reads an Alpaca-style jsonl (fields: ``instruction``, ``input``, ``output``,
