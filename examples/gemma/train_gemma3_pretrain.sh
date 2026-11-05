@@ -5,7 +5,7 @@ CURRENT_DIR=$( cd $( dirname $0 ) && pwd )
 MEGATRON_PATH=$( dirname $( dirname ${CURRENT_DIR}))
 
 # default env
-export LOCAL_HF_PATH=/path/to/gemma-3-1B-it
+export LOCAL_HF_PATH=/path/to/gemma-3-1b-it
 export GPU_MAX_HW_QUEUES=4
 export NVTE_USE_HIPBLASLT_GROUPEDGEMM=1
 # ===================================== Launch Mode =====================================
@@ -176,12 +176,12 @@ case "${MODE}" in
             --recipe ${RECIPE} \
             --mode pretrain \
             --dry-run \
-            ${DATA_CONFIG[@]} \
-            ${TRAIN_CONFIG[@]} \
-            ${OPTIMIZER_CONFIG[@]} \
-            ${PARALLEL_CONFIG[@]} \
-            ${MODEL_CONFIG[@]} \
-            ${CKPT_AND_LOGGING_CONFIG[@]}
+            "${DATA_CONFIG[@]}" \
+            "${TRAIN_CONFIG[@]}" \
+            "${OPTIMIZER_CONFIG[@]}" \
+            "${PARALLEL_CONFIG[@]}" \
+            "${MODEL_CONFIG[@]}" \
+            "${CKPT_AND_LOGGING_CONFIG[@]}"
         echo "======================================"
         echo "Dry run complete. Resolved config: ${CONFIG_DUMP}"
         echo "======================================"
@@ -213,7 +213,7 @@ case "${MODE}" in
         if (( NNODES == 1 )); then
             source /opt/dtk/env.sh
             source ${MEGATRON_PATH}/env/env.sh
-            torchrun ${TORCHRUN_ARGS[@]} ${RECIPE_ARGS[@]} 2>&1 | tee "${SAVE_DIR}/train_logs/mpi_$(date +%F-%H%M).log"
+            torchrun "${TORCHRUN_ARGS[@]}" "${RECIPE_ARGS[@]}" 2>&1 | tee "${SAVE_DIR}/train_logs/mpi_$(date +%F-%H%M).log"
         else
             # One mpirun process per node (slots=1); each starts its own torchrun
             # for that node's GPUs. The remote command is assembled as a string
@@ -231,7 +231,7 @@ case "${MODE}" in
                 --bind-to none \
                 --mca plm_rsh_no_tree_spawn 1 \
                 --mca plm_rsh_args "-p ${PORT}" \
-                ${env_args[@]} \
+                "${env_args[@]}" \
                 bash -c "
                 source /opt/dtk/env.sh && \
                 source ${MEGATRON_PATH}/env/env.sh && \
