@@ -82,3 +82,4 @@ from hcu_megatron.bridge.recipes.deepseek import *
 from hcu_megatron.bridge.recipes.glm import *
 from hcu_megatron.bridge.recipes.minimax import *
 from hcu_megatron.bridge.recipes.qwen import *
+from hcu_megatron.bridge.recipes.gemma import *

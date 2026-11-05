@@ -39,6 +39,8 @@ Third-Party components and their source attribution are documented in [THIRD_PAR
 |Model                 | Model type            | `pretrain` | `sft` |Quick Start|
 |:-------------------: | :-------------------: | :--------: | :---: | :-------: |
 |DeepSeek              | DeepSeek-V4-Flash-0731| ✓          | ✓     |[pretrain](docs/models/deepseek/deepseek-v4-pretrain.md)/[sft](docs/models/deepseek/deepseek-v4-sft.md)|
+|Gemma3                | Gemma3                | ✓          |       |[pretrain](docs/models/gemma/gemma3-pretrain.md)|
+|Gemma4                | Gemma4                | ✓          |       |[pretrain](docs/models/gemma/gemma4-pretrain.md)|
 |GLM                   | GLM-5.2               | ✓          | ✓     |[pretrain](docs/models/glm/glm5-2-pretrain.md)/[sft](docs/models/glm/glm5-2-sft.md)|
 |GLM                   | GLM-5.3               | ✓          |       |[pretrain](docs/models/glm/glm5-3.md)|
 |MiniMax               | MiniMax-M3            | ✓          |       |[pretrain](docs/models/minimax/minimax-m3.md)|
