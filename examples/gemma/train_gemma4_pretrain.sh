@@ -6,9 +6,9 @@ MEGATRON_PATH=$( dirname $( dirname ${CURRENT_DIR}))
 BRIDGE_ENV_SCRIPT="${BRIDGE_ENV_SCRIPT:-${MEGATRON_PATH}/env/env.sh}" # cluster env script (NCCL/IB vars, PYTHONPATH, HCU recipe registration); override with --env BRIDGE_ENV_SCRIPT=<path>
 
 # default env
-export LOCAL_HF_PATH=${LOCAL_HF_PATH:-/path/to/gemma-4-E4B-it
+export LOCAL_HF_PATH=${LOCAL_HF_PATH:-/path/to/gemma-4-E4B-it}
 export GEMMA4_CONVERSION_MODE=text
-export GPU_MAX_HW_QUEUES=4}
+export GPU_MAX_HW_QUEUES=4
 export NVTE_USE_HIPBLASLT_GROUPEDGEMM=1
 # ===================================== Launch Mode =====================================
 RECIPE=${1:-}
