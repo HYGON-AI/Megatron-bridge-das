@@ -65,6 +65,13 @@ else
         exit 1
     fi
 fi
+
+# One mpirun process per node (slots=1); each starts its own torchrun
+# for that node's GPUs. The remote command is assembled as a string
+# because --node_rank must stay literal until it is evaluated on the
+# remote host, where mpirun sets OMPI_COMM_WORLD_RANK.
+HOSTFILE_SLOTS=${CURRENT_DIR}/hostfile_slots
+grep -ve '^[[:space:]]*$' ${HOSTFILE} | sed -n "1,${NNODES}p" | awk '{print $1" slots=1"}' > ${HOSTFILE_SLOTS}
 WORLD_GPUS=$((NNODES * GPUS))
 
 # ===================================== Data Config =====================================
@@ -115,7 +122,7 @@ PARALLEL_CONFIG=(
 MODEL_CONFIG=(
     model.seq_length=${SEQ_LENGTH}
     model.sequence_parallel=true
-    model.cross_entropy_loss_fusion=True
+    model.cross_entropy_loss_fusion=true
     model.cross_entropy_fusion_impl=te
     model.moe_router_fusion=true
     model.moe_permute_fusion=true
@@ -233,15 +240,8 @@ case "${MODE}" in
 
         if (( NNODES == 1 )); then
             source ${MEGATRON_PATH}/env/env.sh
-            torchrun ${TORCHRUN_ARGS[@]} ${RECIPE_ARGS[@]} 2>&1 | tee ${SAVE_LOG}
+            torchrun "${TORCHRUN_ARGS[@]}" "${RECIPE_ARGS[@]}" 2>&1 | tee "${SAVE_LOG}"
         else
-            # One mpirun process per node (slots=1); each starts its own torchrun
-            # for that node's GPUs. The remote command is assembled as a string
-            # because --node_rank must stay literal until it is evaluated on the
-            # remote host, where mpirun sets OMPI_COMM_WORLD_RANK.
-            HOSTFILE_SLOTS="${CURRENT_DIR}/hostfile_slots"
-            grep -ve '^[[:space:]]*$' ${HOSTFILE} | sed -n "1,${NNODES}p" | awk '{print $1" slots=1"}' > ${HOSTFILE_SLOTS}
-
             TORCHRUN_QUOTED="$(printf '%q ' "${TORCHRUN_ARGS[@]}")"
             RECIPE_QUOTED="$(printf '%q ' "${RECIPE_ARGS[@]}")"
             REMOTE_CMD="torchrun --node_rank=\${OMPI_COMM_WORLD_RANK} ${TORCHRUN_QUOTED} ${RECIPE_QUOTED}"

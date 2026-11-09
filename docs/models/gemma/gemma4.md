@@ -7,7 +7,7 @@
 
 ## 1、环境准备
 
-### 1.1 [光源社区](https://developer.sourcefind.cn/servicelist?Accelerators=DCU)拉取HCU基础docker镜像
+### 1.1 [光源社区](https://developer.sourcefind.cn/servicelist)拉取HCU基础docker镜像
 
 ### 1.2 创建容器
 

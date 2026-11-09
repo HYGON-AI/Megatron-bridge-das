@@ -127,7 +127,7 @@ MODEL_CONFIG=(
     model.seq_length=${SEQ_LENGTH}
     model.sequence_parallel=true
     model.overlap_p2p_comm=true
-    model.cross_entropy_loss_fusion=True
+    model.cross_entropy_loss_fusion=true
     model.cross_entropy_fusion_impl=te
     model.moe_router_fusion=true
     model.moe_permute_fusion=true
@@ -216,7 +216,7 @@ else
            --bind-to none \
            --mca plm_rsh_no_tree_spawn 1 \
            --mca plm_rsh_args "-p ${PORT}" \
-           ${env_args[@]} \
+           "${env_args[@]}" \
            bash -c "
            source /opt/dtk/env.sh && \
            source ${MEGATRON_PATH}/env/env.sh && \
@@ -293,7 +293,7 @@ case "${MODE}" in
 
         if (( NNODES == 1 )); then
             source ${MEGATRON_PATH}/env/env.sh
-            torchrun ${TORCHRUN_ARGS[@]} ${RECIPE_ARGS[@]} 2>&1 | tee ${SAVE_LOG}
+            torchrun "${TORCHRUN_ARGS[@]}" "${RECIPE_ARGS[@]}" 2>&1 | tee "${SAVE_LOG}"
         else
             TORCHRUN_QUOTED="$(printf '%q ' "${TORCHRUN_ARGS[@]}")"
             RECIPE_QUOTED="$(printf '%q ' "${RECIPE_ARGS[@]}")"
