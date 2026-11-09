@@ -304,11 +304,11 @@ case "${MODE}" in
                 --bind-to none \
                 --mca plm_rsh_no_tree_spawn 1 \
                 --mca plm_rsh_args "-p ${PORT}" \
-                ${env_args[@]} \
+                "${env_args[@]}" \
                 bash -c "
                 source /opt/dtk/env.sh && \
                 source ${MEGATRON_PATH}/env/env.sh && \
-                ${REMOTE_CMD}" 2>&1 | tee ${SAVE_LOG}
+                ${REMOTE_CMD}" 2>&1 | tee "${SAVE_LOG}"
         fi
         echo "======================================"
         echo "Training finished. Checkpoints: ${SAVE_DIR}"
