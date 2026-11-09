@@ -6,7 +6,8 @@ MEGATRON_PATH=$( dirname $( dirname ${CURRENT_DIR}))
 BRIDGE_ENV_SCRIPT="${BRIDGE_ENV_SCRIPT:-${MEGATRON_PATH}/env/env.sh}" # cluster env script (NCCL/IB vars, PYTHONPATH, HCU recipe registration); override with --env BRIDGE_ENV_SCRIPT=<path>
 
 # default env
-DATA_PATH=/path/to/tulu-3-sft-mixture/data
+PORT=${PORT:-12345}
+DATA_PATH=${DATA_PATH:-/path/to/tulu-3-sft-mixture/data}
 export LOCAL_HF_PATH=${LOCAL_HF_PATH:-/path/to/GLM-5.2}
 export NVTE_USE_HIPBLASLT_GROUPEDGEMM=1
 
@@ -38,11 +39,7 @@ if [[ -z ${RECIPE} ]]; then
 fi
 
 # ===================================== Multi-node Topology =====================================
-if [[ ${RECIPE} == *bw1300* ]]; then
-    GPUS=${GPUS:-4}
-else
-    GPUS=${GPUS:-8}
-fi
+GPUS=${GPUS:-8}
 MASTER_ADDR=127.0.0.1
 MASTER_PORT=29501
 

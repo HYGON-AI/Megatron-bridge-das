@@ -8,6 +8,7 @@ CURRENT_DIR=$( cd $( dirname $0 ) && pwd )
 MEGATRON_PATH=$( dirname $( dirname ${CURRENT_DIR}))
 
 # default env
+PORT="${PORT:-12345}"
 export LOCAL_HF_PATH=${LOCAL_HF_PATH:-/path/to/Qwen3.5-35B-A3B}
 export NVTE_USE_HIPBLASLT_GROUPEDGEMM=1
 export GPU_MAX_HW_QUEUES=4
@@ -41,12 +42,7 @@ if [[ -z ${RECIPE} ]]; then
 fi
 
 # ===================================== Multi-node Topology =====================================
-if [[ ${RECIPE} == *bw1300* ]]; then
-    GPUS=${GPUS:-4}
-else
-    GPUS=${GPUS:-8}
-fi
-PORT=${PORT:-12345}
+GPUS="${GPUS:-8}"
 MASTER_ADDR=127.0.0.1
 MASTER_PORT=29508
 
