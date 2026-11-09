@@ -255,12 +255,12 @@ case "${MODE}" in
             --mode lora \
             --step-func dsv4_step \
             --dry-run \
-            ${DATA_CONFIG[@]} \
-            ${TRAIN_CONFIG[@]} \
-            ${OPTIMIZER_CONFIG[@]} \
-            ${PARALLEL_CONFIG[@]} \
-            ${MODEL_CONFIG[@]} \
-            ${CKPT_AND_LOGGING_CONFIG[@]}
+            "${DATA_CONFIG[@]}" \
+            "${TRAIN_CONFIG[@]}" \
+            "${OPTIMIZER_CONFIG[@]}" \
+            "${PARALLEL_CONFIG[@]}" \
+            "${MODEL_CONFIG[@]}" \
+            "${CKPT_AND_LOGGING_CONFIG[@]}"
         echo "======================================"
         echo "Dry run complete. Resolved config: ${CONFIG_DUMP}"
         echo "======================================"
