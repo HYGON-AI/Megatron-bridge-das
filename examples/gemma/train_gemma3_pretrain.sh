@@ -5,8 +5,8 @@ CURRENT_DIR=$( cd $( dirname $0 ) && pwd )
 MEGATRON_PATH=$( dirname $( dirname ${CURRENT_DIR}))
 
 # default env
-PORT="" # Set the SSH port by running /usr/sbin/sshd -p <port> inside the Docker container on each node. For example: /usr/sbin/sshd -p 12345
-export LOCAL_HF_PATH=/path/to/gemma-3-1b-it
+PORT=${PORT:-12345} # Set the SSH port by running /usr/sbin/sshd -p <port> inside the Docker container on each node. For example: /usr/sbin/sshd -p 12345
+export LOCAL_HF_PATH=${LOCAL_HF_PATH:-/path/to/gemma-3-1b-it}
 export GPU_MAX_HW_QUEUES=4
 export NVTE_USE_HIPBLASLT_GROUPEDGEMM=1
 # ===================================== Launch Mode =====================================
@@ -42,7 +42,6 @@ if [[ ${RECIPE} == *bw1300* ]]; then
 else
     GPUS=${GPUS:-8}
 fi
-PORT=${PORT:-12345}
 MASTER_ADDR=127.0.0.1
 MASTER_PORT=29508
 

@@ -5,10 +5,10 @@ CURRENT_DIR=$( cd $( dirname $0 ) && pwd )
 MEGATRON_PATH=$( dirname $( dirname ${CURRENT_DIR}))
 
 # default env
-PORT="" # Set the SSH port by running /usr/sbin/sshd -p <port> inside the Docker container on each node. For example: /usr/sbin/sshd -p 12345
-DATA_PATH=/path/to/Chinese-DeepSeek-R1-Distill-data-110k-SFT
-export LOCAL_HF_PATH=/path/to/DeepSeek-V4-Flash-0731
-export LOCAL_CORE_PATH=/path/to/DeepSeek-V4-Flash-0731-core
+PORT=${PORT:-12345} # Set the SSH port by running /usr/sbin/sshd -p <port> inside the Docker container on each node. For example: /usr/sbin/sshd -p 12345
+DATA_PATH=${DATA_PATH:-/path/to/Chinese-DeepSeek-R1-Distill-data-110k-SFT}
+export LOCAL_HF_PATH=${LOCAL_HF_PATH:-/path/to/DeepSeek-V4-Flash-0731}
+export LOCAL_CORE_PATH=${LOCAL_CORE_PATH:-/path/to/DeepSeek-V4-Flash-0731-core}
 export NVTE_USE_HIPBLASLT_GROUPEDGEMM=1
 
 # ===================================== Launch Mode =====================================
@@ -44,7 +44,6 @@ if [[ ${RECIPE} == *bw1300* ]]; then
 else
     GPUS=${GPUS:-8}
 fi
-PORT=${PORT:-12345}
 MASTER_ADDR=127.0.0.1
 MASTER_PORT=29501
 

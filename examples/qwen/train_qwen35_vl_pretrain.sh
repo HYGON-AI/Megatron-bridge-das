@@ -6,6 +6,7 @@ MEGATRON_PATH=$( dirname $( dirname ${CURRENT_DIR}))
 BRIDGE_ENV_SCRIPT="${BRIDGE_ENV_SCRIPT:-${MEGATRON_PATH}/env/env.sh}" # cluster env script (NCCL/IB vars, PYTHONPATH, HCU recipe registration); override with --env BRIDGE_ENV_SCRIPT=<path>
 
 # default env
+PORT=${PORT:-25900}
 source ${BRIDGE_ENV_SCRIPT}
 
 # env.sh does not cover Megatron-Energon; add it when a local checkout is
@@ -94,8 +95,11 @@ else
 fi
 
 # ===================================== Multi-node Topology =====================================
-GPUS=${GPUS:-8}
-PORT=${PORT:-25900}
+if [[ ${RECIPE} == *bw1300* ]]; then
+    GPUS=${GPUS:-4}
+else
+    GPUS=${GPUS:-8}
+fi
 MASTER_ADDR=${MASTER_ADDR:-127.0.0.1}
 MASTER_PORT=${MASTER_PORT:-29501}
 

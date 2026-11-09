@@ -39,7 +39,11 @@ if [[ -z ${RECIPE} ]]; then
 fi
 
 # ===================================== Multi-node Topology =====================================
-GPUS=${GPUS:-8}
+if [[ ${RECIPE} == *bw1300* ]]; then
+    GPUS=${GPUS:-4}
+else
+    GPUS=${GPUS:-8}
+fi
 MASTER_ADDR=127.0.0.1
 MASTER_PORT=29508
 
