@@ -44,7 +44,7 @@ def deepseek_v4_flash_pretrain_32gpu_bw1000_bf16_test_config() -> ConfigContaine
     """
     use_fused_mhc = deepseek_v4_supports_bw_fused_kernels()
     cfg = _pretrain_common()
-    cfg.model = AutoBridge.from_hf_pretrained(DEEPSEEK_V4_FLASH_HF_PATH, trust_remote_code=True).to_megatron_provider(
+    cfg.model = AutoBridge.from_hf_pretrained(DEEPSEEK_V4_FLASH_HF_PATH).to_megatron_provider(
         load_weights=False
     )
 
@@ -187,7 +187,7 @@ def deepseek_v4_flash_sft_32gpu_bw1000_bf16_test_config() -> ConfigContainer:
     Recommended BW1000 baseline: TP=1, PP=2, EP=16, CP=1.
     """
     cfg = _sft_common()
-    cfg.model = AutoBridge.from_hf_pretrained(DEEPSEEK_V4_FLASH_HF_PATH, trust_remote_code=True).to_megatron_provider(
+    cfg.model = AutoBridge.from_hf_pretrained(DEEPSEEK_V4_FLASH_HF_PATH).to_megatron_provider(
         load_weights=False
     )
 

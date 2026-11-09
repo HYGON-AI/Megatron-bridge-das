@@ -36,7 +36,6 @@ SEQUENCE_LENGTH_128K: int = 131072
 # Pretrain
 # ---------------------------------------------------------------------------
 
-
 # Gemma3 models
 def gemma3_1b_pretrain_8gpu_bw1000_bf16_config() -> ConfigContainer:
     """Return a pre-training config for Gemma3 1B.
@@ -159,7 +158,7 @@ def _adjust_gemma3_vocab_size(model_cfg, hf_path: str):
     if hasattr(model_cfg, "vocab_size") and hf_path:
         from transformers import AutoTokenizer
 
-        tokenizer = AutoTokenizer.from_pretrained(hf_path, trust_remote_code=True)
+        tokenizer = AutoTokenizer.from_pretrained(hf_path)
         if len(tokenizer) > model_cfg.vocab_size:
             model_cfg.vocab_size = len(tokenizer)
 
