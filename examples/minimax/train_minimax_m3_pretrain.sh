@@ -3,10 +3,10 @@
 set -euo pipefail
 CURRENT_DIR=$( cd $( dirname $0 ) && pwd )
 MEGATRON_PATH=$( dirname $( dirname ${CURRENT_DIR}))
+BRIDGE_ENV_SCRIPT="${BRIDGE_ENV_SCRIPT:-${MEGATRON_PATH}/env/env.sh}" # cluster env script (NCCL/IB vars, PYTHONPATH, HCU recipe registration); override with --env BRIDGE_ENV_SCRIPT=<path>
 
 # default env
-PORT="" # Set the SSH port by running /usr/sbin/sshd -p <port> inside the Docker container on each node. For example: /usr/sbin/sshd -p 12345
-export LOCAL_HF_PATH=/path/to/MiniMax-M3
+export LOCAL_HF_PATH=${LOCAL_HF_PATH:-/path/to/MiniMax-M3}
 export NVTE_USE_HIPBLASLT_GROUPEDGEMM=1
 
 # ===================================== Launch Mode =====================================
@@ -195,7 +195,7 @@ SAVE_LOG=${SAVE_DIR}/train_logs/mpi_$(date +%F-%H%M).log
 
 case "${MODE}" in
     dryrun)
-        source ${MEGATRON_PATH}/env/env.sh
+        source ${BRIDGE_ENV_SCRIPT}
         python ${MEGATRON_PATH}/run_recipe.py \
             --recipe ${RECIPE} \
             --mode pretrain \
@@ -235,7 +235,7 @@ case "${MODE}" in
         fi
 
         if (( NNODES == 1 )); then
-            source ${MEGATRON_PATH}/env/env.sh
+            source ${BRIDGE_ENV_SCRIPT}
             torchrun "${TORCHRUN_ARGS[@]}" "${RECIPE_ARGS[@]}" 2>&1 | tee "${SAVE_LOG}"
         else
             TORCHRUN_QUOTED="$(printf '%q ' "${TORCHRUN_ARGS[@]}")"
@@ -250,7 +250,7 @@ case "${MODE}" in
                 ${env_args[@]} \
                 bash -c "
                 source /opt/dtk/env.sh && \
-                source ${MEGATRON_PATH}/env/env.sh && \
+                source ${BRIDGE_ENV_SCRIPT} && \
                 ${REMOTE_CMD}" 2>&1 | tee ${SAVE_LOG}
         fi
         echo "======================================"

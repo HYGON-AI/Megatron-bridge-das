@@ -3,9 +3,10 @@
 set -euo pipefail
 CURRENT_DIR=$( cd $( dirname $0 ) && pwd )
 MEGATRON_PATH=$( dirname $( dirname ${CURRENT_DIR}))
+BRIDGE_ENV_SCRIPT="${BRIDGE_ENV_SCRIPT:-${MEGATRON_PATH}/env/env.sh}" # cluster env script (NCCL/IB vars, PYTHONPATH, HCU recipe registration); override with --env BRIDGE_ENV_SCRIPT=<path>
 
 # default env
-source ${MEGATRON_PATH}/env/env.sh
+source ${BRIDGE_ENV_SCRIPT}
 
 # env.sh does not cover Megatron-Energon; add it when a local checkout is
 # present.  Remembered separately because the remote shell of a multi-node run
@@ -323,7 +324,7 @@ case "${MODE}" in
 
             # The remote shell re-sources env.sh, which rebuilds PYTHONPATH from
             # scratch, so the Energon checkout has to be re-appended there.
-            REMOTE_PREFIX="source ${MEGATRON_PATH}/env/env.sh"
+            REMOTE_PREFIX="source ${BRIDGE_ENV_SCRIPT}"
             if [[ -n ${EXTRA_PYTHONPATH} ]]; then
                 REMOTE_PREFIX="${REMOTE_PREFIX} && export PYTHONPATH=\"\${PYTHONPATH}:${EXTRA_PYTHONPATH}\""
             fi

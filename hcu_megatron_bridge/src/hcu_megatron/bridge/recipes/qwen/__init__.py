@@ -16,6 +16,7 @@
 
 from .qwen35 import (
     qwen35_text_35b_a3b_pretrain_32gpu_bw1000_bf16_config,
+    qwen35_text_9b_pretrain_8gpu_bw1000_bf16_config,
 )
 from .qwen35_vl import (
     qwen35_vl_2b_pretrain_8gpu_bw1000_bf16_config,
@@ -32,6 +33,7 @@ from .qwen38 import (
 
 __all__ = [
     "qwen35_text_35b_a3b_pretrain_32gpu_bw1000_bf16_config",
+    "qwen35_text_9b_pretrain_8gpu_bw1000_bf16_config",
     "qwen35_vl_2b_pretrain_8gpu_bw1000_bf16_config",
     "qwen35_vl_2b_pretrain_8gpu_bw1000_bf16_mock_config",
     "qwen35_vl_4b_pretrain_8gpu_bw1000_bf16_config",
