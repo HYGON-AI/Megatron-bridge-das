@@ -32,6 +32,10 @@ from megatron.bridge.training.mixed_precision import bf16_mixed
 SEQUENCE_LENGTH_32K: int = 32768
 SEQUENCE_LENGTH_128K: int = 131072
 
+# ---------------------------------------------------------------------------
+# Pretrain
+# ---------------------------------------------------------------------------
+
 
 # Gemma3 models
 def gemma3_1b_pretrain_8gpu_bw1000_bf16_config() -> ConfigContainer:

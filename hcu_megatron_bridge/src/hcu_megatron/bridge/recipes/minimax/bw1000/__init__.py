@@ -18,6 +18,5 @@ from hcu_megatron.bridge.recipes.minimax.bw1000.minimax_m3 import *  # noqa: F40
 
 
 __all__ = [
-    "minimax_m3_pretrain_256gpu_bw1000_bf16_config",
     "minimax_m3_pretrain_16gpu_bw1000_bf16_test_config",
 ]

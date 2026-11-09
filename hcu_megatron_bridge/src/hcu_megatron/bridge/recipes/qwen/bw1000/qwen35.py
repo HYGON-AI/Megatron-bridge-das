@@ -31,6 +31,11 @@ from megatron.bridge.training.mixed_precision import bf16_mixed
 _QWEN35_35B_A3B_BASE = "Qwen/Qwen3.5-35B-A3B"
 
 
+# ---------------------------------------------------------------------------
+# Pretrain
+# ---------------------------------------------------------------------------
+
+
 def qwen35_text_35b_a3b_pretrain_32gpu_bw1000_bf16_config() -> ConfigContainer:
     """Return a text-only Qwen3.5-35B-A3B pretraining config for eight BW1000 GPUs."""
     cfg = _pretrain_common()

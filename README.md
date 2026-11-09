@@ -36,16 +36,16 @@ Modified by Hygon Information Technology Co., Ltd.
 Third-Party components and their source attribution are documented in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## 支持模型
-|Model                 | Model type            | `pretrain` | `sft` |Quick Start|
-|:-------------------: | :-------------------: | :--------: | :---: | :-------: |
-|DeepSeek              | DeepSeek-V4-Flash-0731| ✓          | ✓     |[pretrain](docs/models/deepseek/deepseek-v4-pretrain.md)/[sft](docs/models/deepseek/deepseek-v4-sft.md)|
-|Gemma3                | Gemma3                | ✓          |       |[pretrain](docs/models/gemma/gemma3-pretrain.md)|
-|Gemma4                | Gemma4                | ✓          |       |[pretrain](docs/models/gemma/gemma4-pretrain.md)|
-|GLM                   | GLM-5.2               | ✓          | ✓     |[pretrain](docs/models/glm/glm5-2-pretrain.md)/[sft](docs/models/glm/glm5-2-sft.md)|
-|GLM                   | GLM-5.3               | ✓          |       |[pretrain](docs/models/glm/glm5-3.md)|
-|MiniMax               | MiniMax-M3            | ✓          |       |[pretrain](docs/models/minimax/minimax-m3.md)|
-|Qwen                  | Qwen3.5-2B            | ✓          |       |[pretrain](docs/models/qwen/qwen35-vl-bw1000.md)|
-|Qwen                  | Qwen3.5-4B            | ✓          |       |[pretrain](docs/models/qwen/qwen35-vl-bw1000.md)|
-|Qwen                  | Qwen3.5-9B            | ✓          |       |[pretrain](docs/models/qwen/qwen35-vl-bw1000.md)|
-|Qwen                  | Qwen3.5-35B-A3B       | ✓          |       |[pretrain](docs/models/qwen/qwen3.5-35b-a3b-pretrain.md)|
-|Qwen                  | Qwen3.8-2.4T-A95B     | ✓          |       |[pretrain](docs/models/qwen/qwen3.8-pretrain.md)|
+|Model                 | Model type            | `pretrain` | `sft` |`peft` |Quick Start|
+|:-------------------: | :-------------------: | :--------: | :---: | :---: |:-------: |
+|DeepSeek              | DeepSeek-V4-Flash-0731| ✓          | ✓     |✓     |[pretrain](docs/models/deepseek/deepseek-v4-flash.md)/[sft](docs/models/deepseek/deepseek-v4-flash.md)/[peft](docs/models/deepseek/deepseek-v4-flash.md)|
+|Gemma3                | Gemma3                | ✓          |       |      |[pretrain](docs/models/gemma/gemma3.md)|
+|Gemma4                | Gemma4                | ✓          |       |      |[pretrain](docs/models/gemma/gemma4.md)|
+|GLM                   | GLM-5.2               | ✓          | ✓     |      |[pretrain](docs/models/glm/glm5-2.md)/[sft](docs/models/glm/glm5-2.md)|
+|GLM                   | GLM-5.3               | ✓          |       |      |[pretrain](docs/models/glm/glm5-3.md)|
+|MiniMax               | MiniMax-M3            | ✓          |       |      |[pretrain](docs/models/minimax/minimax-m3.md)|
+|Qwen                  | Qwen3.5-2B            | ✓          |       |      |[pretrain](docs/models/qwen/qwen35-vl-bw1000.md)|
+|Qwen                  | Qwen3.5-4B            | ✓          |       |      |[pretrain](docs/models/qwen/qwen35-vl-bw1000.md)|
+|Qwen                  | Qwen3.5-9B            | ✓          |       |      |[pretrain](docs/models/qwen/qwen35-vl-bw1000.md)|
+|Qwen                  | Qwen3.5-35B-A3B       | ✓          |       |      |[pretrain](docs/models/qwen/qwen3.5-35b-a3b.md)|
+|Qwen                  | Qwen3.8-2.4T-A95B     | ✓          |       |      |[pretrain](docs/models/qwen/qwen3.8-2.4t-a95b.md)|

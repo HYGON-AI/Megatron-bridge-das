@@ -1,8 +1,14 @@
-# 基于Megatron-Bridge-das启动GLM 5.3 pretrain示例
+# GLM-5.3
+
+## Supported
+| Hardware | Recipe | Precision and optimizer |
+|----------|--------|-------------------------|
+| BW1300, 32 GPUs | `glm53_pretrain_32gpu_bw1000_bf16_test_config` | BF16 Adam |
+
 
 ## 1、环境准备
 
-### 1.1 [光源社区](https://developer.sourcefind.cn/servicelist)拉取HCU基础docker镜像
+### 1.1 [光源社区](https://developer.sourcefind.cn/servicelist?Accelerators=DCU)拉取HCU基础docker镜像
 
 ### 1.2 创建容器
 
@@ -10,7 +16,7 @@
 
 ```shell
 docker run -it \
-       --name megatron-bridge-das_test \
+       --name megatron-bridge_test \
        --shm-size=64G \
        --device=/dev/kfd \
        --device=/dev/mkfd \
@@ -36,8 +42,6 @@ cd /workspace
 git clone --recurse-submodules https://github.com/HYGON-AI/Megatron-bridge-das.git
 ```
 
-如代码仓无法正常clone，可离线下载对应分支的`Megatron-bridge-das`，`Megatron-bridge`仓库，解压后按`Megatron-bridge-das`仓库目录位置放置。
-
 ### 1.4 安装依赖
 
 ```shell
@@ -45,7 +49,7 @@ cd /workspace/Megatron-bridge-das
 pip install -r requirements.txt
 ```
 
-## 2、数据处理
+## 2、数据处理(pretrain不需要)
 
 pretrain使用mock的数据集，无需处理
 
@@ -76,10 +80,11 @@ modelscope download --model ZhipuAI/GLM-5.3 --local_dir ./GLM-5.3
 
 可以填写节点ip或者节点主机名。
 
-（2）根据任务填写`train_glm53_pretrain.sh`脚本
+（2）根据任务填写脚本
 
-进入`/workspace/Megatron-bridge-das/examples/glm`，根据上述文件路径，填写`train_glm53_pretrain.sh`文件中如下变量：
+进入`/workspace/Megatron-bridge-das/examples/glm`，根据上述文件路径，填写如下变量：
 
+#### pretrain
 ```shell
 PORT="" # Set the SSH port by running /usr/sbin/sshd -p <port> inside the Docker container on each node. For example: /usr/sbin/sshd -p 12345
 export LOCAL_HF_PATH=/path/to/GLM-5.3
@@ -87,11 +92,12 @@ export LOCAL_HF_PATH=/path/to/GLM-5.3
 
 ### 4.2 执行脚本
 
+#### pretrain
 ```shell
 docker exec -it "your container name" bash
 cd /workspace/Megatron-bridge-das/examples/glm
 
-bash train_glm53_pretrain.sh <RECIPE> <MODE> [HOSTFILE] [NODES]
+./train_glm53_pretrain.sh <RECIPE> <MODE> [HOSTFILE] [NODES]
 
 RECIPE: SUPPORTED_RECIPES in train_glm53_pretrain.sh
 MODE: dryrun or train # 配置dryrun时不需要再跟HOSTFILE和NODES参数

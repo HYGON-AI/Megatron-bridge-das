@@ -29,7 +29,6 @@ from hcu_megatron.bridge.recipes.qwen.bw1000.qwen35_vl import (
     qwen35_vl_9b_pretrain_8gpu_bw1000_bf16_mock_config,
 )
 from hcu_megatron.bridge.recipes.qwen.bw1000.qwen38 import (
-    qwen38_text_2_4t_pretrain_bw1000_bf16_config,
     qwen38_text_2_4t_pretrain_128gpu_bw1000_bf16_test_config,
 )
 
@@ -42,6 +41,5 @@ __all__ = [
     "qwen35_vl_4b_pretrain_8gpu_bw1000_bf16_mock_config",
     "qwen35_vl_9b_pretrain_8gpu_bw1000_bf16_config",
     "qwen35_vl_9b_pretrain_8gpu_bw1000_bf16_mock_config",
-    "qwen38_text_2_4t_pretrain_bw1000_bf16_config",
     "qwen38_text_2_4t_pretrain_128gpu_bw1000_bf16_test_config",
 ]

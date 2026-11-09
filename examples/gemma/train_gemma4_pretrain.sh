@@ -5,6 +5,7 @@ CURRENT_DIR=$( cd $( dirname $0 ) && pwd )
 MEGATRON_PATH=$( dirname $( dirname ${CURRENT_DIR}))
 
 # default env
+PORT="" # Set the SSH port by running /usr/sbin/sshd -p <port> inside the Docker container on each node. For example: /usr/sbin/sshd -p 12345
 export LOCAL_HF_PATH=/path/to/gemma-4-E4B-it
 export GEMMA4_CONVERSION_MODE=text
 export GPU_MAX_HW_QUEUES=4
@@ -14,7 +15,7 @@ RECIPE=${1:-}
 MODE=${2:-}
 HOSTFILE=${3:-}
 NODES=${4:-}
-PROFILING="torch"
+PROFILING="" # If you want to profiling, please set this var to torch
 
 RED="\033[31m"
 YELLOW="\033[33m"
@@ -37,8 +38,12 @@ if [[ -z ${RECIPE} ]]; then
 fi
 
 # ===================================== Multi-node Topology =====================================
-GPUS="${GPUS:-8}"
-PORT="${PORT:-11453}"
+if [[ ${RECIPE} == *bw1300* ]]; then
+    GPUS=${GPUS:-4}
+else
+    GPUS=${GPUS:-8}
+fi
+PORT=${PORT:-12345}
 MASTER_ADDR=127.0.0.1
 MASTER_PORT=29508
 
@@ -170,6 +175,7 @@ env_args=(
     -x MASTER_ADDR=${MASTER_ADDR}
     -x MASTER_PORT=${MASTER_PORT}
 )
+SAVE_LOG=${SAVE_DIR}/train_logs/mpi_$(date +%F-%H%M).log
 
 case "${MODE}" in
     dryrun)
@@ -216,7 +222,7 @@ case "${MODE}" in
         if (( NNODES == 1 )); then
             source /opt/dtk/env.sh
             source ${MEGATRON_PATH}/env/env.sh
-            torchrun "${TORCHRUN_ARGS[@]}" "${RECIPE_ARGS[@]}" 2>&1 | tee "${SAVE_DIR}/train_logs/mpi_$(date +%F-%H%M).log"
+            torchrun "${TORCHRUN_ARGS[@]}" "${RECIPE_ARGS[@]}" 2>&1 | tee ${SAVE_LOG}
         else
             # One mpirun process per node (slots=1); each starts its own torchrun
             # for that node's GPUs. The remote command is assembled as a string
@@ -238,7 +244,7 @@ case "${MODE}" in
                 bash -c "
                 source /opt/dtk/env.sh && \
                 source ${MEGATRON_PATH}/env/env.sh && \
-                ${REMOTE_CMD}" 2>&1 | tee ${SAVE_DIR}/train_logs/mpi_$(date +%F-%H%M).log
+                ${REMOTE_CMD}" 2>&1 | tee ${SAVE_LOG}
         fi
         echo "======================================"
         echo "Training finished. Checkpoints: ${SAVE_DIR}"

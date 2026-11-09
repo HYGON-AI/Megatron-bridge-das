@@ -6,7 +6,7 @@ MEGATRON_PATH=$( dirname $( dirname ${CURRENT_DIR}))
 
 # default env
 PORT="" # Set the SSH port by running /usr/sbin/sshd -p <port> inside the Docker container on each node. For example: /usr/sbin/sshd -p 12345
-DATA_PATH=/path/to/CongliuChinese-DeepSeek-R1-Distill-data-110k-SFT
+DATA_PATH=/path/to/Chinese-DeepSeek-R1-Distill-data-110k-SFT
 export LOCAL_HF_PATH=/path/to/DeepSeek-V4-Flash-0731
 export LOCAL_CORE_PATH=/path/to/DeepSeek-V4-Flash-0731-core
 export NVTE_USE_HIPBLASLT_GROUPEDGEMM=1
@@ -24,8 +24,7 @@ RESET="\033[0m"
 
 # Discover supported recipes from the deepseek module
 SUPPORTED_RECIPES=(
-    deepseek_v4_flash_sft_128gpu_BW1000_bf16_config
-    deepseek_v4_flash_sft_32gpu_BW1000_bf16_test_config
+    deepseek_v4_flash_sft_32gpu_bw1000_bf16_test_config
 )
 
 # Validate RECIPE argument
@@ -40,7 +39,11 @@ if [[ -z ${RECIPE} ]]; then
 fi
 
 # ===================================== Multi-node Topology =====================================
-GPUS=${GPUS:-8}
+if [[ ${RECIPE} == *bw1300* ]]; then
+    GPUS=${GPUS:-4}
+else
+    GPUS=${GPUS:-8}
+fi
 PORT=${PORT:-12345}
 MASTER_ADDR=127.0.0.1
 MASTER_PORT=29501
@@ -104,37 +107,20 @@ OPTIMIZER_CONFIG=(
 )
 
 # ===================================== Parallel Config =====================================
-if [[ $RECIPE == *test* ]];then
-    TP=1
-    PP=2
-    EP=16
-    ETP=1
-    CP=1
+TP=1
+PP=2
+EP=16
+ETP=1
+CP=1
 
-    PARALLEL_CONFIG=(
-        train.exit_interval=30
-        model.tensor_model_parallel_size=${TP}
-        model.pipeline_model_parallel_size=${PP}
-        model.expert_model_parallel_size=${EP}
-        model.expert_tensor_parallel_size=${ETP}
-        model.context_parallel_size=${CP}
-    )
-else
-    TP=1
-    PP=8
-    EP=16
-    ETP=1
-    CP=1
-
-    PARALLEL_CONFIG=(
-        model.tensor_model_parallel_size=${TP}
-        model.pipeline_model_parallel_size=${PP}
-        model.expert_model_parallel_size=${EP}
-        model.expert_tensor_parallel_size=${ETP}
-        model.context_parallel_size=${CP}
-        model.pipeline_model_parallel_layout="Et*5|t*6|t*5|t*6|t*5|t*6|t*5|t*5mL"
-    )
-fi
+PARALLEL_CONFIG=(
+    train.exit_interval=30
+    model.tensor_model_parallel_size=${TP}
+    model.pipeline_model_parallel_size=${PP}
+    model.expert_model_parallel_size=${EP}
+    model.expert_tensor_parallel_size=${ETP}
+    model.context_parallel_size=${CP}
+)
 
 # ===================================== Model Config =====================================
 MODEL_CONFIG=(
@@ -214,6 +200,7 @@ env_args=(
     -x MASTER_ADDR=${MASTER_ADDR}
     -x MASTER_PORT=${MASTER_PORT}
 )
+SAVE_LOG=${SAVE_DIR}/sft_logs/mpi_$(date +%F-%H%M).log
 
 # ------------------------------------------------------------------------------
 # Phase 1: HF -> Megatron import (skipped if the base checkpoint already exists)
@@ -232,6 +219,7 @@ else
            ${env_args[@]} \
            bash -c "
            source /opt/dtk/env.sh && \
+           source ${MEGATRON_PATH}/env/env.sh && \
            cd ${MEGATRON_PATH}/scripts/conversion && \
            bash convert.sh import \
            --executor manual \
@@ -247,7 +235,7 @@ else
            --trust-remote-code \
            --moe-flex-dispatcher-backend deepep \
            --moe-flex-dispatcher-num-sms 60 \
-           --tp $TP --pp $PP --ep $EP" 2>&1 | tee ${SAVE_DIR}/sft_logs/mpi_$(date +%F-%H%M).log
+           --tp $TP --pp $PP --ep $EP" 2>&1 | tee ${SAVE_LOG}
 fi
 
 # ------------------------------------------------------------------------------
@@ -289,7 +277,7 @@ case "${MODE}" in
             ${MEGATRON_PATH}/run_recipe.py
             --recipe ${RECIPE}
             --mode sft
-            --step-func gpt_step
+            --step-func dsv4_step
             --dataset local-jsonl
             ${DATA_CONFIG[@]}
             ${TRAIN_CONFIG[@]}
@@ -305,7 +293,7 @@ case "${MODE}" in
 
         if (( NNODES == 1 )); then
             source ${MEGATRON_PATH}/env/env.sh
-            torchrun ${TORCHRUN_ARGS[@]} ${RECIPE_ARGS[@]} 2>&1 | tee "${SAVE_DIR}/sft_logs/mpi_$(date +%F-%H%M).log"
+            torchrun ${TORCHRUN_ARGS[@]} ${RECIPE_ARGS[@]} 2>&1 | tee ${SAVE_LOG}
         else
             TORCHRUN_QUOTED="$(printf '%q ' "${TORCHRUN_ARGS[@]}")"
             RECIPE_QUOTED="$(printf '%q ' "${RECIPE_ARGS[@]}")"
@@ -320,7 +308,7 @@ case "${MODE}" in
                 bash -c "
                 source /opt/dtk/env.sh && \
                 source ${MEGATRON_PATH}/env/env.sh && \
-                ${REMOTE_CMD}" 2>&1 | tee ${SAVE_DIR}/sft_logs/mpi_$(date +%F-%H%M).log
+                ${REMOTE_CMD}" 2>&1 | tee ${SAVE_LOG}
         fi
         echo "======================================"
         echo "Training finished. Checkpoints: ${SAVE_DIR}"

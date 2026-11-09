@@ -19,20 +19,15 @@
 from __future__ import annotations
 
 from hcu_megatron.bridge.recipes.deepseek.bw1000.deepseek_v4 import (
-    deepseek_v4_flash_pretrain_128gpu_BW1000_bf16_config,
-    deepseek_v4_flash_pretrain_32gpu_BW1000_bf16_test_config,
-    deepseek_v4_flash_sft_128gpu_BW1000_bf16_config,
-    deepseek_v4_flash_sft_32gpu_BW1000_bf16_test_config,
-    deepseek_v4_pro_pretrain_bw1000_bf16_config,
-    deepseek_v4_pro_pretrain_256gpu_bw1000_bf16_test_config,
+    deepseek_v4_flash_pretrain_32gpu_bw1000_bf16_test_config,
+    deepseek_v4_flash_sft_32gpu_bw1000_bf16_test_config,
+)
+from hcu_megatron.bridge.recipes.deepseek.bw1101.deepseek_v4 import (
+    deepseek_v4_flash_peft_32gpu_bw1101_bf16_test_config
 )
 
-
 __all__ = [
-    "deepseek_v4_flash_pretrain_128gpu_BW1000_bf16_config",
-    "deepseek_v4_flash_pretrain_32gpu_BW1000_bf16_test_config",
-    "deepseek_v4_flash_sft_128gpu_BW1000_bf16_config",
-    "deepseek_v4_flash_sft_32gpu_BW1000_bf16_test_config",
-    "deepseek_v4_pro_pretrain_bw1000_bf16_config",
-    "deepseek_v4_pro_pretrain_256gpu_bw1000_bf16_test_config",
+    "deepseek_v4_flash_pretrain_32gpu_bw1000_bf16_test_config",
+    "deepseek_v4_flash_sft_32gpu_bw1000_bf16_test_config",
+    "deepseek_v4_flash_peft_32gpu_bw1101_bf16_test_config",
 ]

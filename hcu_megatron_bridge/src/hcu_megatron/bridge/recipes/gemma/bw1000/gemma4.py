@@ -43,6 +43,11 @@ def _gemma4_text_conversion_mode():
             os.environ["GEMMA4_CONVERSION_MODE"] = previous_mode
 
 
+# ---------------------------------------------------------------------------
+# Pretrain
+# ---------------------------------------------------------------------------
+
+
 def gemma4_e4b_pretrain_16gpu_bw1000_bf16_config() -> ConfigContainer:
     """Return a pre-training config for Gemma 4 E4B (Dense, ~3.8B parameters).
 

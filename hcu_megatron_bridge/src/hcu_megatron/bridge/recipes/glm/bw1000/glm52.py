@@ -31,6 +31,11 @@ _GLM52_MODEL_ID = "zai-org/GLM-5.2"
 _GLM52_MODEL_REVISION = "4d67f66cc64d3219133b767c253b2ad1425c6c88"  # pragma: allowlist secret
 
 
+# ---------------------------------------------------------------------------
+# Pretrain
+# ---------------------------------------------------------------------------
+
+
 def glm52_pretrain_32gpu_bw1000_bf16_test_config() -> ConfigContainer:
     """GLM-5.2 bounded pretraining on 32 bw1000 GPUs."""
     cfg = _pretrain_common()
@@ -105,6 +110,10 @@ def glm52_pretrain_32gpu_bw1000_bf16_test_config() -> ConfigContainer:
     cfg.checkpoint.load = None
     cfg.env_vars = {**COMMON_RECIPE_ENV_VARS}
     return cfg
+
+# ---------------------------------------------------------------------------
+# Supervised Fine-Tuning
+# ---------------------------------------------------------------------------
 
 
 def glm52_sft_32gpu_bw1000_bf16_test_config() -> ConfigContainer:

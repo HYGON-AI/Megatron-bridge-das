@@ -30,6 +30,11 @@ _GLM53_MODEL_ID = "zai-org/GLM-5.3"
 _GLM53_MODEL_REVISION = "aca966e4e02791568aa6a4ced368624b3d897f42"  # pragma: allowlist secret
 
 
+# ---------------------------------------------------------------------------
+# Pretrain
+# ---------------------------------------------------------------------------
+
+
 def glm53_pretrain_32gpu_bw1000_bf16_test_config() -> ConfigContainer:
     """GLM-5.3 bounded pretraining on 32 bw1000 GPUs."""
     cfg = _pretrain_common()

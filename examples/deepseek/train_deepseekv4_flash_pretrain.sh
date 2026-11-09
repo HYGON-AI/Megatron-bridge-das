@@ -22,8 +22,7 @@ RESET="\033[0m"
 
 # Discover supported recipes from the deepseek module
 SUPPORTED_RECIPES=(
-    deepseek_v4_flash_pretrain_128gpu_BW1000_bf16_config
-    deepseek_v4_flash_pretrain_32gpu_BW1000_bf16_test_config
+    deepseek_v4_flash_pretrain_32gpu_bw1000_bf16_test_config
 )
 
 # Validate RECIPE argument
@@ -38,7 +37,11 @@ if [[ -z ${RECIPE} ]]; then
 fi
 
 # ===================================== Multi-node Topology =====================================
-GPUS=${GPUS:-8}
+if [[ ${RECIPE} == *bw1300* ]]; then
+    GPUS=${GPUS:-4}
+else
+    GPUS=${GPUS:-8}
+fi
 PORT=${PORT:-12345}
 MASTER_ADDR=127.0.0.1
 MASTER_PORT=29501
@@ -93,36 +96,20 @@ OPTIMIZER_CONFIG=(
 )
 
 # ===================================== Parallel Config =====================================
-if [[ $RECIPE == *test* ]];then
-    TP=1
-    PP=2
-    EP=16
-    ETP=1
-    CP=1
+TP=1
+PP=2
+EP=16
+ETP=1
+CP=1
 
-    PARALLEL_CONFIG=(
-        train.exit_interval=30
-        model.tensor_model_parallel_size=${TP}
-        model.pipeline_model_parallel_size=${PP}
-        model.expert_model_parallel_size=${EP}
-        model.expert_tensor_parallel_size=${ETP}
-        model.context_parallel_size=${CP}
-    )
-else
-    TP=1
-    PP=4
-    EP=32
-    ETP=1
-    CP=1
-
-    PARALLEL_CONFIG=(
-        model.tensor_model_parallel_size=${TP}
-        model.pipeline_model_parallel_size=${PP}
-        model.expert_model_parallel_size=${EP}
-        model.expert_tensor_parallel_size=${ETP}
-        model.context_parallel_size=${CP}
-    )
-fi
+PARALLEL_CONFIG=(
+    train.exit_interval=30
+    model.tensor_model_parallel_size=${TP}
+    model.pipeline_model_parallel_size=${PP}
+    model.expert_model_parallel_size=${EP}
+    model.expert_tensor_parallel_size=${ETP}
+    model.context_parallel_size=${CP}
+)
 
 # ===================================== Model Config =====================================
 MODEL_CONFIG=(
@@ -161,7 +148,7 @@ CKPT_AND_LOGGING_CONFIG=(
 # ===================================== Profiler Config =====================================
 PROFILING_CONFIG=(
     profiling.use_pytorch_profiler=true
-    profiling.profile_ranks=[0,4]
+    profiling.profile_ranks=[0,16]
     profiling.profile_step_start=3
     profiling.profile_step_end=4
     profiling.pytorch_profiler_collect_callstack=true
@@ -198,6 +185,7 @@ env_args=(
     -x MASTER_ADDR=${MASTER_ADDR}
     -x MASTER_PORT=${MASTER_PORT}
 )
+SAVE_LOG=${SAVE_DIR}/train_logs/mpi_$(date +%F-%H%M).log
 
 case "${MODE}" in
     dryrun)
@@ -242,7 +230,7 @@ case "${MODE}" in
 
         if (( NNODES == 1 )); then
             source ${MEGATRON_PATH}/env/env.sh
-            torchrun ${TORCHRUN_ARGS[@]} ${RECIPE_ARGS[@]} 2>&1 | tee "${SAVE_DIR}/train_logs/mpi_$(date +%F-%H%M).log"
+            torchrun ${TORCHRUN_ARGS[@]} ${RECIPE_ARGS[@]} 2>&1 | tee ${SAVE_LOG}
         else
             # One mpirun process per node (slots=1); each starts its own torchrun
             # for that node's GPUs. The remote command is assembled as a string
@@ -264,7 +252,7 @@ case "${MODE}" in
                 bash -c "
                 source /opt/dtk/env.sh && \
                 source ${MEGATRON_PATH}/env/env.sh && \
-                ${REMOTE_CMD}" 2>&1 | tee ${SAVE_DIR}/train_logs/mpi_$(date +%F-%H%M).log
+                ${REMOTE_CMD}" 2>&1 | tee ${SAVE_LOG}
         fi
         echo "======================================"
         echo "Training finished. Checkpoints: ${SAVE_DIR}"
