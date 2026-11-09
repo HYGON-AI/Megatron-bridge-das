@@ -17,7 +17,7 @@ export PYTHONPATH=${MEGATRON_PATH}/hcu_megatron_bridge/src:${MEGATRON_PATH}/3rdp
 export TRITON_HOME=/tmp
 export ROCSHMEM_IB_GID_INDEX=3
 export NCCL_SOCKET_IFNAME=eth0
-export GLOO_SOCKET_IFNAME=eth0
+export GLOO_SOCKET_IFNAME=${NCCL_SOCKET_IFNAME}
 
 # These variables should be modified according to the environment of the machine you are using.
 # Auto-detect the IB HCA family and pick the matching profile. Force a specific

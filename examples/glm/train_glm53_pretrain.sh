@@ -250,7 +250,7 @@ case "${MODE}" in
                 bash -c "
                 source /opt/dtk/env.sh && \
                 source ${MEGATRON_PATH}/env/env.sh && \
-                ${REMOTE_CMD}" 2>&1 | ee ${SAVE_LOG}
+                ${REMOTE_CMD}" 2>&1 | tee ${SAVE_LOG}
         fi
         echo "======================================"
         echo "Training finished. Checkpoints: ${SAVE_DIR}"
