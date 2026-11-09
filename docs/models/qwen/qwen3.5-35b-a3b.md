@@ -1,4 +1,4 @@
-# Gemma4-E4B-text
+# Qwen3.5-35B-A3B
 
 ## Supported
 | Hardware | Recipe | Precision and optimizer |

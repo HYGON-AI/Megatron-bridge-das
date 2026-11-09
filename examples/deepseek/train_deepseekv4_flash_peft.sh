@@ -114,7 +114,6 @@ ETP=1
 CP=1
 
 PARALLEL_CONFIG=(
-    train.exit_interval=10
     model.tensor_model_parallel_size=${TP}
     model.pipeline_model_parallel_size=${PP}
     model.expert_model_parallel_size=${EP}

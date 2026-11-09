@@ -1,4 +1,4 @@
-# Gemma4-E4B-text
+# MiniMax-M3
 
 ## Supported
 | Hardware | Recipe | Precision and optimizer |
