@@ -86,8 +86,8 @@ modelscope download --model ZhipuAI/GLM-5.3 --local_dir ./GLM-5.3
 
 #### pretrain
 ```shell
-PORT="" # Set the SSH port by running /usr/sbin/sshd -p <port> inside the Docker container on each node. For example: /usr/sbin/sshd -p 12345
-export LOCAL_HF_PATH=/path/to/GLM-5.3
+PORT=${PORT:-12345} # Set the SSH port by running /usr/sbin/sshd -p <port> inside the Docker container on each node. For example: /usr/sbin/sshd -p 12345
+export LOCAL_HF_PATH=${LOCAL_HF_PATH:-/path/to/GLM-5.3}
 ```
 
 ### 4.2 执行脚本

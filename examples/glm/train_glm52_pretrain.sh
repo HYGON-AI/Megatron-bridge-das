@@ -6,7 +6,7 @@ MEGATRON_PATH=$( dirname $( dirname ${CURRENT_DIR}))
 BRIDGE_ENV_SCRIPT="${BRIDGE_ENV_SCRIPT:-${MEGATRON_PATH}/env/env.sh}" # cluster env script (NCCL/IB vars, PYTHONPATH, HCU recipe registration); override with --env BRIDGE_ENV_SCRIPT=<path>
 
 # default env
-PORT=${PORT:-12345}
+PORT=${PORT:-12345} # Set the SSH port by running /usr/sbin/sshd -p <port> inside the Docker container on each node. For example: /usr/sbin/sshd -p 12345
 export LOCAL_HF_PATH=${LOCAL_HF_PATH:-/path/to/GLM-5.2}
 export NVTE_USE_HIPBLASLT_GROUPEDGEMM=1
 
@@ -199,12 +199,12 @@ case "${MODE}" in
             --recipe ${RECIPE} \
             --mode pretrain \
             --dry-run \
-            ${DATA_CONFIG[@]} \
-            ${TRAIN_CONFIG[@]} \
-            ${OPTIMIZER_CONFIG[@]} \
-            ${PARALLEL_CONFIG[@]} \
-            ${MODEL_CONFIG[@]} \
-            ${CKPT_AND_LOGGING_CONFIG[@]}
+            "${DATA_CONFIG[@]}" \
+            "${TRAIN_CONFIG[@]}" \
+            "${OPTIMIZER_CONFIG[@]}" \
+            "${PARALLEL_CONFIG[@]}" \
+            "${MODEL_CONFIG[@]}" \
+            "${CKPT_AND_LOGGING_CONFIG[@]}"
         echo "======================================"
         echo "Dry run complete. Resolved config: ${CONFIG_DUMP}"
         echo "======================================"
@@ -246,11 +246,11 @@ case "${MODE}" in
                 --bind-to none \
                 --mca plm_rsh_no_tree_spawn 1 \
                 --mca plm_rsh_args "-p ${PORT}" \
-                ${env_args[@]} \
+                "${env_args[@]}" \
                 bash -c "
                 source /opt/dtk/env.sh && \
                 source ${BRIDGE_ENV_SCRIPT} && \
-                ${REMOTE_CMD}" 2>&1 | tee ${SAVE_LOG}
+                ${REMOTE_CMD}" 2>&1 | tee "${SAVE_LOG}"
         fi
         echo "======================================"
         echo "Training finished. Checkpoints: ${SAVE_DIR}"

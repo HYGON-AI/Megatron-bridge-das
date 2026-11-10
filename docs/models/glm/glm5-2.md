@@ -122,8 +122,8 @@ docker exec -it "your container name" bash
 cd /workspace/Megatron-bridge-das/examples/glm
 
 # train_glm52_pretrain.sh
-PORT="" # Set the SSH port by running /usr/sbin/sshd -p <port> inside the Docker container on each node. For example: /usr/sbin/sshd -p 12345
-export LOCAL_HF_PATH=/path/to/GLM-5.2
+PORT=${PORT:-12345} # Set the SSH port by running /usr/sbin/sshd -p <port> inside the Docker container on each node. For example: /usr/sbin/sshd -p 12345
+export LOCAL_HF_PATH=${LOCAL_HF_PATH:-/path/to/GLM-5.2}
 
 ./train_glm52_pretrain.sh <RECIPE> <MODE> [HOSTFILE] [NODES]
 
@@ -140,9 +140,9 @@ docker exec -it "your container name" bash
 cd /workspace/Megatron-bridge-das/examples/glm
 
 # train_glm52_sft.sh
-PORT="" # Set the SSH port by running /usr/sbin/sshd -p <port> inside the Docker container on each node. For example: /usr/sbin/sshd -p 12345
-DATA_PATH=/path/to/tulu-3-sft-mixture/data
-export LOCAL_HF_PATH=/path/to/GLM-5.2
+PORT=${PORT:-12345} # Set the SSH port by running /usr/sbin/sshd -p <port> inside the Docker container on each node. For example: /usr/sbin/sshd -p 12345
+DATA_PATH=${DATA_PATH:-/path/to/tulu-3-sft-mixture/data}
+export LOCAL_HF_PATH=${LOCAL_HF_PATH:-/path/to/GLM-5.2}
 
 ./train_glm52_sft.sh <RECIPE> <MODE> [HOSTFILE] [NODES]
 

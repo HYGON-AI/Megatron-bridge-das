@@ -6,8 +6,8 @@ MEGATRON_PATH=$( dirname $( dirname ${CURRENT_DIR}))
 BRIDGE_ENV_SCRIPT="${BRIDGE_ENV_SCRIPT:-${MEGATRON_PATH}/env/env.sh}" # cluster env script (NCCL/IB vars, PYTHONPATH, HCU recipe registration); override with --env BRIDGE_ENV_SCRIPT=<path>
 
 # default env
+PORT=${PORT:-12345} # Set the SSH port by running /usr/sbin/sshd -p <port> inside the Docker container on each node. For example: /usr/sbin/sshd -p 12345
 DATA_PATH=${DATA_PATH:-/path/to/CongliuChinese-DeepSeek-R1-Distill-data-110k-SFT}
-PORT=${PORT:-12345}
 export LOCAL_HF_PATH=${LOCAL_HF_PATH:-/path/to/DeepSeek-V4-Flash-0731}
 export LOCAL_CORE_PATH=${LOCAL_CORE_PATH:-/path/to/DeepSeek-V4-Flash-0731-core}
 export NVTE_USE_HIPBLASLT_GROUPEDGEMM=1
@@ -17,7 +17,7 @@ RECIPE=${1:-}
 MODE=${2:-}
 HOSTFILE=${3:-}
 NODES=${4:-}
-PROFILING=""
+PROFILING="" # If you want to profiling, please set this var to torch
 
 RED="\033[31m"
 YELLOW="\033[33m"
@@ -147,10 +147,10 @@ CONFIG_DUMP=${SAVE_DIR}/${RECIPE}.yaml
 
 CKPT_AND_LOGGING_CONFIG=(
     checkpoint.pretrained_checkpoint=${LOCAL_CORE_PATH}/iter_0000000
-    checkpoint.load=null
+    checkpoint.load=${SAVE_DIR}/ckpt
     checkpoint.load_optim=false
     checkpoint.load_rng=false
-    checkpoint.save=null
+    checkpoint.save=${SAVE_DIR}/ckpt
     checkpoint.save_optim=false
     checkpoint.save_interval=300
     logger.log_interval=1
@@ -235,7 +235,7 @@ else
            --trust-remote-code \
            --moe-flex-dispatcher-backend deepep \
            --moe-flex-dispatcher-num-sms 60 \
-           --tp $TP --pp $PP --ep $EP" 2>&1 | tee ${SAVE_LOG}
+           --tp $TP --pp $PP --ep $EP" 2>&1 | tee "${SAVE_LOG}"
 fi
 
 # ------------------------------------------------------------------------------
@@ -255,12 +255,12 @@ case "${MODE}" in
             --mode sft \
             --step-func dsv4_step \
             --dry-run \
-            ${DATA_CONFIG[@]} \
-            ${TRAIN_CONFIG[@]} \
-            ${OPTIMIZER_CONFIG[@]} \
-            ${PARALLEL_CONFIG[@]} \
-            ${MODEL_CONFIG[@]} \
-            ${CKPT_AND_LOGGING_CONFIG[@]}
+            "${DATA_CONFIG[@]}" \
+            "${TRAIN_CONFIG[@]}" \
+            "${OPTIMIZER_CONFIG[@]}" \
+            "${PARALLEL_CONFIG[@]}" \
+            "${MODEL_CONFIG[@]}" \
+            "${CKPT_AND_LOGGING_CONFIG[@]}"
         echo "======================================"
         echo "Dry run complete. Resolved config: ${CONFIG_DUMP}"
         echo "======================================"
@@ -304,11 +304,11 @@ case "${MODE}" in
                 --bind-to none \
                 --mca plm_rsh_no_tree_spawn 1 \
                 --mca plm_rsh_args "-p ${PORT}" \
-                ${env_args[@]} \
+                "${env_args[@]}" \
                 bash -c "
                 source /opt/dtk/env.sh && \
                 source ${BRIDGE_ENV_SCRIPT} && \
-                ${REMOTE_CMD}" 2>&1 | tee ${SAVE_LOG}
+                ${REMOTE_CMD}" 2>&1 | tee "${SAVE_LOG}"
         fi
         echo "======================================"
         echo "Training finished. Checkpoints: ${SAVE_DIR}"

@@ -112,8 +112,8 @@ docker exec -it "your container name" bash
 cd /workspace/Megatron-bridge-das/examples/deepseek
 
 # train_deepseekv4_flash_pretrain.sh
-PORT="" # Set the SSH port by running /usr/sbin/sshd -p <port> inside the Docker container on each node. For example: /usr/sbin/sshd -p 12345
-export LOCAL_HF_PATH=/path/to/DeepSeek-V4-Flash-0731
+PORT=${PORT:-12345} # Set the SSH port by running /usr/sbin/sshd -p <port> inside the Docker container on each node. For example: /usr/sbin/sshd -p 12345
+export LOCAL_HF_PATH=${LOCAL_HF_PATH:-/path/to/DeepSeek-V4-Flash-0731}
 
 ./train_deepseekv4_flash_pretrain.sh <RECIPE> <MODE> [HOSTFILE] [NODES]
 
@@ -130,10 +130,10 @@ docker exec -it "your container name" bash
 cd /workspace/Megatron-bridge-das/examples/deepseek
 
 # train_deepseekv4_flash_sft.sh
-PORT="" # Set the SSH port by running /usr/sbin/sshd -p <port> inside the Docker container on each node. For example: /usr/sbin/sshd -p 12345
-DATA_PATH=/path/to/Chinese-DeepSeek-R1-Distill-data-110k-SFT
-export LOCAL_HF_PATH=/path/to/DeepSeek-V4-Flash-0731
-export LOCAL_CORE_PATH=/path/to/DeepSeek-V4-Flash-0731-core
+PORT=${PORT:-12345} # Set the SSH port by running /usr/sbin/sshd -p <port> inside the Docker container on each node. For example: /usr/sbin/sshd -p 12345
+DATA_PATH=${DATA_PATH:-/path/to/Chinese-DeepSeek-R1-Distill-data-110k-SFT}
+export LOCAL_HF_PATH=${LOCAL_HF_PATH:-/path/to/DeepSeek-V4-Flash-0731}
+export LOCAL_CORE_PATH=${LOCAL_CORE_PATH:-/path/to/DeepSeek-V4-Flash-0731-core}
 
 ./train_deepseekv4_flash_sft.sh <RECIPE> <MODE> [HOSTFILE] [NODES]
 
@@ -150,10 +150,10 @@ docker exec -it "your container name" bash
 cd /workspace/Megatron-bridge-das/examples/deepseek
 
 # train_deepseekv4_flash_peft.sh
-PORT="" # Set the SSH port by running /usr/sbin/sshd -p <port> inside the Docker container on each node. For example: /usr/sbin/sshd -p 12345
-DATA_PATH=/path/to/Chinese-DeepSeek-R1-Distill-data-110k-SFT
-export LOCAL_HF_PATH=/path/to/DeepSeek-V4-Flash-0731
-export LOCAL_CORE_PATH=/path/to/DeepSeek-V4-Flash-0731-core
+PORT=${PORT:-12345} # Set the SSH port by running /usr/sbin/sshd -p <port> inside the Docker container on each node. For example: /usr/sbin/sshd -p 12345
+DATA_PATH=${DATA_PATH:-/path/to/Chinese-DeepSeek-R1-Distill-data-110k-SFT}
+export LOCAL_HF_PATH=${LOCAL_HF_PATH:-/path/to/DeepSeek-V4-Flash-0731}
+export LOCAL_CORE_PATH=${LOCAL_CORE_PATH:-/path/to/DeepSeek-V4-Flash-0731-core}
 
 ./train_deepseekv4_flash_peft.sh <RECIPE> <MODE> [HOSTFILE] [NODES]
 

@@ -87,8 +87,8 @@ docker exec -it "your container name" bash
 cd /workspace/Megatron-bridge-das/examples/minimax
 
 # train_minimax_m3_pretrain.sh
-PORT="" # Set the SSH port by running /usr/sbin/sshd -p <port> inside the Docker container on each node. For example: /usr/sbin/sshd -p 12345
-export LOCAL_HF_PATH=/path/to/MiniMax-M3
+PORT=${PORT:-12345} # Set the SSH port by running /usr/sbin/sshd -p <port> inside the Docker container on each node. For example: /usr/sbin/sshd -p 12345
+export LOCAL_HF_PATH=${LOCAL_HF_PATH:-/path/to/MiniMax-M3}
 
 ./train_minimax_m3_pretrain.sh <RECIPE> <MODE> [HOSTFILE] [NODES]
 

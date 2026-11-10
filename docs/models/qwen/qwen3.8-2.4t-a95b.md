@@ -87,8 +87,8 @@ docker exec -it "your container name" bash
 cd /workspace/Megatron-bridge-das/examples/qwen
 
 # train_qwen38_2.4t_pretrain.sh
-PORT="" # Set the SSH port by running /usr/sbin/sshd -p <port> inside the Docker container on each node. For example: /usr/sbin/sshd -p 12345
-export LOCAL_HF_PATH=/path/to/Qwen3.8-2.4T-A95B
+PORT=${PORT:-12345} # Set the SSH port by running /usr/sbin/sshd -p <port> inside the Docker container on each node. For example: /usr/sbin/sshd -p 12345
+export LOCAL_HF_PATH=${LOCAL_HF_PATH:-/path/to/Qwen3.8-2.4T-A95B}
 
 ./train_qwen38_2.4t_pretrain.sh <RECIPE> <MODE> [HOSTFILE] [NODES]
 
