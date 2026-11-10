@@ -63,7 +63,10 @@ from megatron.core.models.gpt.gpt_model import GPTModel
 from megatron.bridge.models.conversion.mapping_registry import MegatronMappingRegistry
 from megatron.bridge.models.conversion.model_bridge import MegatronModelBridge
 from megatron.bridge.models.conversion.param_mapping import AutoMapping
-from megatron.bridge.models.deepseek.deepseek_v4_bridge import DeepSeekV4Bridge
+from megatron.bridge.models.deepseek.deepseek_v4_bridge import (
+    DeepSeekV4Bridge,
+    _ReplicatedOptional,
+)
 from megatron.bridge.models.mla_provider import MLAModelProvider
 
 logger = logging.getLogger(__name__)
@@ -412,6 +415,31 @@ class DeepSeekV41Bridge(DeepSeekV4Bridge):
         # index / candidate blocks from earlier "source" layers, and its config.json
         # carries those layer lists (0-based, matching CSA2's layer_idx = layer_number-1).
         provider.dsv4_version = "v4.1"
+        
+        # Native V4.1 rejects three DSv4 fusions in transformer_config.
+        # _validate_dsv41_config(); CSA2 has no MLA fused down projection and no
+        # masked softmax, and its standalone TE SwiGLU cannot implement the
+        # required clamp.  Force them off in the bridge so every consumer -- the
+        # conversion import (scripts/conversion/gpu_backend.py builds the provider
+        # without the recipe CLI overrides) as well as the training recipes --
+        # gets a provider that passes validation.
+        provider.masked_softmax_fusion = False
+        provider.mla_down_proj_fusion = False
+        provider.use_te_activation_func = False
+
+        # Remaining defaults inherited from V4/MCore that V4.1 rejects in
+        # _validate_dsv41_config():
+        #   * dsa_indexer_rotate_activation defaults to True, but V4.1 dropped the
+        #     indexer Hadamard rotation;
+        #   * csa_dense_mode must stay off (V4.1 uses CSA2, not dense CSA);
+        #   * qk_clip must stay off (V4.1 does not clip QK logits);
+        #   * the V4 bridge sets mscale = mscale_all_dim = 1.0 to cancel DSv3
+        #     amplitude scaling, while V4.1 YaRN requires both to be exactly zero.
+        provider.dsa_indexer_rotate_activation = False
+        provider.csa_dense_mode = False
+        provider.qk_clip = False
+        provider.mscale = 0.0
+        provider.mscale_all_dim = 0.0
         provider.csa2_kv_source_layers = list(
             _get(hf_config, "kv_source_layer_ids") or []
         )
@@ -491,7 +519,20 @@ class DeepSeekV41Bridge(DeepSeekV4Bridge):
             AutoMapping(
                 "decoder.layers.*.engram.conv_norm.weight",
                 "layers.*.engram.conv_norm.weight",
-            )
+            ),
+            # V4.1 indexers carry two tensors the V4 registry does not map:
+            #   * layers.N.attn.indexer.wk.weight      -> indexer.linear_wk.weight
+            #   * layers.N.attn.indexer.k_norm.weight  -> indexer.k_norm.weight
+            # Without them the generic loader logs "No mapping found" and leaves
+            # those parameters at their initialisation values.
+            _ReplicatedOptional(
+                "decoder.layers.*.self_attention.core_attention.indexer.linear_wk.weight",
+                "layers.*.attn.indexer.wk.weight",
+            ),
+            _ReplicatedOptional(
+                "decoder.layers.*.self_attention.core_attention.indexer.k_norm.weight",
+                "layers.*.attn.indexer.k_norm.weight",
+            ),
         ]
         return MegatronMappingRegistry(*mappings)
 
@@ -603,7 +644,13 @@ class DeepSeekV41Bridge(DeepSeekV4Bridge):
                         f"rows but the prime allocation needs {sum(sizes)}. Check "
                         f"engram_vocab_sizes / engram_vocab_size against config.json."
                     )
-                ranges = table_row_ranges(sizes, module.embedding.ep_size, module.embedding.ep_rank)
+                # EPShardedMultiTableEmbedding keeps ep_group/ep_size but never sets
+                # ep_rank; only the underlying EPShardedEmbeddingTable instances do.
+                embedding = module.embedding
+                ep_rank = getattr(embedding, "ep_rank", None)
+                if ep_rank is None:
+                    ep_rank = tables[0].ep_rank
+                ranges = table_row_ranges(sizes, embedding.ep_size, ep_rank)
                 if len(ranges) != len(tables):
                     raise ValueError(
                         f"Engram layer {layer_number}: {len(tables)} EP tables but "

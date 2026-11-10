@@ -27,6 +27,31 @@ _ORIGINAL_CONVERSION_DIR = _LOCAL_DIR.parents[1] / "3rdparty" / "Megatron-Bridge
 if _ORIGINAL_CONVERSION_DIR.is_dir() and str(_ORIGINAL_CONVERSION_DIR) not in sys.path:
     sys.path.append(str(_ORIGINAL_CONVERSION_DIR))
 
+try:  # DeepSeek-V4.1: register its composite HF config/model classes before
+    # any AutoConfig lookup.  Released transformers builds do not know
+    # model_type "deepseek_v41"; importing the bridge registers them via
+    # AutoConfig.register(..., exist_ok=True), which only adds new keys and
+    # leaves every other model type (DeepSeek-V4 included) untouched.
+    import hcu_megatron.bridge.models.deepseek.deepseek_v41_bridge  # noqa: F401
+
+    # Apply the DSv4.1 conversion patches through the project's feature manager,
+    # exactly like the training entry point does (megatron_adaptor.patch_features).
+    # ``hcu_megatron_bridge`` lives at the repo root (not under src/), so the root
+    # has to be importable as well.
+    _REPO_ROOT = _LOCAL_DIR.parents[1]
+    if str(_REPO_ROOT) not in sys.path:
+        sys.path.append(str(_REPO_ROOT))
+
+    from hcu_megatron_bridge.patch_utils import MegatronPatchesManager
+    from hcu_megatron_bridge.features_manager.deepseekv41.dsv41_conversion_feature import (
+        DSV41ConversionFeature,
+    )
+
+    DSV41ConversionFeature().register_patches(MegatronPatchesManager, None)
+    MegatronPatchesManager.apply_patches()
+except ImportError:  # upstream-only environments without the Hygon bridge
+    pass
+
 import cpu_backend
 import gpu_backend
 from arguments import build_parser

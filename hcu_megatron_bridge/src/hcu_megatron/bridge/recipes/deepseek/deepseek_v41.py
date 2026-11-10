@@ -16,11 +16,15 @@
 
 from __future__ import annotations
 
+from hcu_megatron.bridge.recipes.deepseek.bw1101.deepseek_v41 import (
+    deepseek_v41_flash_peft_32gpu_bw1101_bf16_test_config,
+)
 from hcu_megatron.bridge.recipes.deepseek.bw1300.deepseek_v41 import (
-    deepseek_v41_flash_pretrain_16gpu_BW1300_bf16_test_config,
+    deepseek_v41_flash_pretrain_16gpu_bw1300_bf16_test_config,
 )
 
 
 __all__ = [
-    "deepseek_v41_flash_pretrain_16gpu_BW1300_bf16_test_config",
+    "deepseek_v41_flash_peft_32gpu_bw1101_bf16_test_config",
+    "deepseek_v41_flash_pretrain_16gpu_bw1300_bf16_test_config",
 ]

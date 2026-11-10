@@ -15,6 +15,7 @@
 
 from .basic.megatron_basic import MegatronBasicFeature
 from .deepseekv4.deepseekv4_feature import DeepSeekV4Feature
+from .deepseekv41.dsv41_conversion_feature import DSV41ConversionFeature
 from .deepseekv41.dsv41_engram_args_feature import DSV41EngramArgsFeature
 from .deepseekv41.dsv41_flops_feature import DSV41FlopsFeature
 from .profiler.profiler_feature import ProfilerFeature
@@ -25,6 +26,7 @@ from .transformer.hyper_connection_feature import HyperConnectionFeature
 ADAPTOR_FEATURES = [
     MegatronBasicFeature(),
     DeepSeekV4Feature(),
+    DSV41ConversionFeature(),
     DSV41EngramArgsFeature(),
     DSV41FlopsFeature(),
     ProfilerFeature(),

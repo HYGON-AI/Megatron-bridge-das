@@ -46,6 +46,26 @@ LOCAL_REPO_ROOT = _LOCAL_SCRIPTS_DIR.parents[1] / "3rdparty" / "Megatron-Bridge"
 _ORIGINAL_CONVERSION_DIR = LOCAL_REPO_ROOT / "scripts" / "conversion"
 
 
+def _conversion_pythonpath_prefix(repo_root: Path) -> list[str]:
+    """Ordered PYTHONPATH prefix for the conversion worker.
+
+    ``repo_root/src`` and the pristine conversion dir must stay reachable, but the
+    vendored ``3rdparty/Megatron-LM`` may only be added when the caller has not
+    already provided a Megatron-Core tree.  Both the vendored copy and forks such
+    as ``3rdparty/Megatron-LM-dsv41`` ship the same ``megatron.core`` namespace
+    package, so whichever directory comes first wins.  Prepending the vendored
+    copy unconditionally silently shadowed the DSv4.1 fork and hid extensions
+    such as ``megatron.core.models.engram``.
+    """
+    inherited = os.environ.get("PYTHONPATH", "")
+    has_other_megatron = any("Megatron-LM" in part for part in inherited.split(":") if part)
+    parts = [f"{repo_root}/src"]
+    if not has_other_megatron:
+        parts.append(f"{repo_root}/3rdparty/Megatron-LM")
+    parts.append(str(_ORIGINAL_CONVERSION_DIR))
+    return parts
+
+
 def _parse_env(values: list[str]) -> list[str]:
     """Validate inherited environment variable names without materializing values."""
     env_names: list[str] = []
@@ -234,7 +254,7 @@ def _build_task(args: argparse.Namespace) -> tuple[run.Script, list[str]]:
         # Include the pristine 3rdparty conversion dir so unchanged worker
         # siblings (cpu_backend, utils) resolve even though only a subset of
         # the modules live next to the patched worker.
-        pythonpath = f"{repo_root}/src:{repo_root}/3rdparty/Megatron-LM:{_ORIGINAL_CONVERSION_DIR}"
+        pythonpath = ":".join(_conversion_pythonpath_prefix(repo_root))
         if existing_pythonpath:
             pythonpath = f"{pythonpath}:{existing_pythonpath}"
     else:
@@ -276,11 +296,7 @@ def _run_manual(args: argparse.Namespace) -> None:
     worker_script = str(_LOCAL_SCRIPTS_DIR / "run_conversion.py")
 
     existing_pythonpath = os.environ.get("PYTHONPATH", "")
-    pythonpath_parts = [
-        f"{LOCAL_REPO_ROOT}/src",
-        f"{LOCAL_REPO_ROOT}/3rdparty/Megatron-LM",
-        str(_ORIGINAL_CONVERSION_DIR),
-    ]
+    pythonpath_parts = _conversion_pythonpath_prefix(LOCAL_REPO_ROOT)
     if existing_pythonpath:
         pythonpath_parts.append(existing_pythonpath)
 

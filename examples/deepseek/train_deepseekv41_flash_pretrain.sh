@@ -5,7 +5,8 @@ CURRENT_DIR=$( cd $( dirname $0 ) && pwd )
 MEGATRON_PATH=$( dirname $( dirname ${CURRENT_DIR}))
 
 # default env
-export LOCAL_HF_PATH=/path/to/DeepSeek-V4.1-Flash-1017
+PORT=${PORT:-12345} # Set the SSH port by running /usr/sbin/sshd -p <port> inside the Docker container on each node. For example: /usr/sbin/sshd -p 12345
+export LOCAL_HF_PATH=${LOCAL_HF_PATH:-/path/to/DeepSeek-V4-Flash-0731}
 export NVTE_USE_HIPBLASLT_GROUPEDGEMM=1
 
 # ===================================== Launch Mode =====================================
@@ -21,7 +22,7 @@ RESET="\033[0m"
 
 # Discover supported recipes from the deepseek module
 SUPPORTED_RECIPES=(
-    deepseek_v41_flash_pretrain_16gpu_BW1300_bf16_test_config
+    deepseek_v41_flash_pretrain_16gpu_bw1300_bf16_test_config
 )
 
 # Validate RECIPE argument
@@ -36,8 +37,11 @@ if [[ -z ${RECIPE} ]]; then
 fi
 
 # ===================================== Multi-node Topology =====================================
-GPUS=${GPUS:-4}
-PORT=${PORT:-12333}
+if [[ ${RECIPE} == *bw1300* ]]; then
+    GPUS=${GPUS:-4}
+else
+    GPUS=${GPUS:-8}
+fi
 MASTER_ADDR=127.0.0.1
 MASTER_PORT=29501
 
@@ -60,6 +64,13 @@ else
         exit 1
     fi
 fi
+
+# One mpirun process per node (slots=1); each starts its own torchrun
+# for that node's GPUs. The remote command is assembled as a string
+# because --node_rank must stay literal until it is evaluated on the
+# remote host, where mpirun sets OMPI_COMM_WORLD_RANK.
+HOSTFILE_SLOTS=${CURRENT_DIR}/hostfile_slots
+grep -ve '^[[:space:]]*$' ${HOSTFILE} | sed -n "1,${NNODES}p" | awk '{print $1" slots=1"}' > ${HOSTFILE_SLOTS}
 WORLD_GPUS=$((NNODES * GPUS))
 
 # ===================================== Data Config =====================================
@@ -99,53 +110,36 @@ to_1based() { local out=(); local id; for id in "$@"; do out+=($((id + 1))); don
 engram_layer_ids_1based=($(to_1based "${engram_layer_ids[@]}"))
 engram_layer_ids_csv=$(IFS=,; echo "${engram_layer_ids_1based[*]}")
 
-if [[ $RECIPE == *test* ]];then
-    TP=1
-    PP=1
-    EP=16
-    ETP=1
-    CP=1
-    num_layers=4
-    # Official 0-based form for the 4-layer backbone: [1, 3] -> 1-based [2, 4].
-    engram_layer_ids=(1 3)
-    engram_layer_ids_1based=($(to_1based "${engram_layer_ids[@]}"))
-    engram_layer_ids_csv=$(IFS=,; echo "${engram_layer_ids_1based[*]}")
-    # Per-order row budget for n-gram orders 2..4 (EngramConfig.global_vocab_sizes).
-    engram_vocab_sizes=(4096 4096 4096)
-    engram_vocab_sizes_csv=$(IFS=,; echo "${engram_vocab_sizes[*]}")
-    csa_compress_ratios=[0,2,1,0]
+TP=1
+PP=1
+EP=16
+ETP=1
+CP=1
+num_layers=4
+# Official 0-based form for the 4-layer backbone: [1, 3] -> 1-based [2, 4].
+engram_layer_ids=(1 3)
+engram_layer_ids_1based=($(to_1based "${engram_layer_ids[@]}"))
+engram_layer_ids_csv=$(IFS=,; echo "${engram_layer_ids_1based[*]}")
+# Per-order row budget for n-gram orders 2..4 (EngramConfig.global_vocab_sizes).
+engram_vocab_sizes=(4096 4096 4096)
+engram_vocab_sizes_csv=$(IFS=,; echo "${engram_vocab_sizes[*]}")
+csa_compress_ratios=[0,2,1,0]
 
-    PARALLEL_CONFIG=(
-        train.exit_interval=10
-        model.num_layers=${num_layers}
-        model.engram_layer_ids=[${engram_layer_ids_csv}]
-        model.engram_vocab_sizes=[${engram_vocab_sizes_csv}]
-        model.csa_compress_ratios=${csa_compress_ratios}
-        model.csa2_kv_source_layers=[1,2]
-        model.csa2_index_source_layers=[1,2]
-        model.csa2_candidate_source_layer=2
-        model.tensor_model_parallel_size=${TP}
-        model.pipeline_model_parallel_size=${PP}
-        model.expert_model_parallel_size=${EP}
-        model.expert_tensor_parallel_size=${ETP}
-        model.context_parallel_size=${CP}
-    )
-else
-    TP=1
-    PP=4
-    EP=32
-    ETP=1
-    CP=1
-
-    PARALLEL_CONFIG=(
-        model.tensor_model_parallel_size=${TP}
-        model.pipeline_model_parallel_size=${PP}
-        model.expert_model_parallel_size=${EP}
-        model.expert_tensor_parallel_size=${ETP}
-        model.context_parallel_size=${CP}
-    )
-fi
-
+PARALLEL_CONFIG=(
+    train.exit_interval=10
+    model.num_layers=${num_layers}
+    model.engram_layer_ids=[${engram_layer_ids_csv}]
+    model.engram_vocab_sizes=[${engram_vocab_sizes_csv}]
+    model.csa_compress_ratios=${csa_compress_ratios}
+    model.csa2_kv_source_layers=[1,2]
+    model.csa2_index_source_layers=[1,2]
+    model.csa2_candidate_source_layer=2
+    model.tensor_model_parallel_size=${TP}
+    model.pipeline_model_parallel_size=${PP}
+    model.expert_model_parallel_size=${EP}
+    model.expert_tensor_parallel_size=${ETP}
+    model.context_parallel_size=${CP}
+)
 
 # ===================================== Model Config =====================================
 MODEL_CONFIG=(
@@ -232,7 +226,7 @@ python ${MEGATRON_PATH}/3rdparty/Megatron-LM-dsv41/tools/engram/generate_tokeniz
        --layer-ids "${engram_layer_ids_1based[@]}" \
        --max-ngram-order 4 \
        --hash-seed 0 \
-       --pad-token-id 2 2>&1 | tee ${SAVE_LOG}
+       --pad-token-id 2 2>&1 | tee "${SAVE_LOG}"
 
 # ------------------------------------------------------------------------------
 # Phase 2: pretraining (or dry run) with the recipe
@@ -246,12 +240,12 @@ case "${MODE}" in
             --recipe ${RECIPE} \
             --mode pretrain \
             --dry-run \
-            ${DATA_CONFIG[@]} \
-            ${TRAIN_CONFIG[@]} \
-            ${OPTIMIZER_CONFIG[@]} \
-            ${PARALLEL_CONFIG[@]} \
-            ${MODEL_CONFIG[@]} \
-            ${CKPT_AND_LOGGING_CONFIG[@]}
+            "${DATA_CONFIG[@]}" \
+            "${TRAIN_CONFIG[@]}" \
+            "${OPTIMIZER_CONFIG[@]}" \
+            "${PARALLEL_CONFIG[@]}" \
+            "${MODEL_CONFIG[@]}" \
+            "${CKPT_AND_LOGGING_CONFIG[@]}"
         echo "======================================"
         echo "Dry run complete. Resolved config: ${CONFIG_DUMP}"
         echo "======================================"
@@ -282,15 +276,8 @@ case "${MODE}" in
 
         if (( NNODES == 1 )); then
             source ${MEGATRON_PATH}/env/env.sh
-            torchrun ${TORCHRUN_ARGS[@]} ${RECIPE_ARGS[@]} 2>&1 | tee ${SAVE_LOG}
+            torchrun "${TORCHRUN_ARGS[@]}" "${RECIPE_ARGS[@]}" 2>&1 | tee "${SAVE_LOG}"
         else
-            # One mpirun process per node (slots=1); each starts its own torchrun
-            # for that node's GPUs. The remote command is assembled as a string
-            # because --node_rank must stay literal until it is evaluated on the
-            # remote host, where mpirun sets OMPI_COMM_WORLD_RANK.
-            HOSTFILE_SLOTS="${CURRENT_DIR}/hostfile_slots"
-            grep -ve '^[[:space:]]*$' ${HOSTFILE} | sed -n "1,${NNODES}p" | awk '{print $1" slots=1"}' > ${HOSTFILE_SLOTS}
-
             TORCHRUN_QUOTED="$(printf '%q ' "${TORCHRUN_ARGS[@]}")"
             RECIPE_QUOTED="$(printf '%q ' "${RECIPE_ARGS[@]}")"
             REMOTE_CMD="torchrun --node_rank=\${OMPI_COMM_WORLD_RANK} ${TORCHRUN_QUOTED} ${RECIPE_QUOTED}"
@@ -300,11 +287,11 @@ case "${MODE}" in
                 --bind-to none \
                 --mca plm_rsh_no_tree_spawn 1 \
                 --mca plm_rsh_args "-p ${PORT}" \
-                ${env_args[@]} \
+                "${env_args[@]}" \
                 bash -c "
                 source /opt/dtk/env.sh && \
                 source ${MEGATRON_PATH}/env/env.sh && \
-                ${REMOTE_CMD}" 2>&1 | tee ${SAVE_LOG}
+                ${REMOTE_CMD}" 2>&1 | tee "${SAVE_LOG}"
         fi
         echo "======================================"
         echo "Training finished. Checkpoints: ${SAVE_DIR}"

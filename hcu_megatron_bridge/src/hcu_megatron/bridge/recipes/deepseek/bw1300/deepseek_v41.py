@@ -50,7 +50,12 @@ def _require_engram() -> None:
         )
 
 
-def deepseek_v41_flash_pretrain_16gpu_BW1300_bf16_test_config() -> ConfigContainer:
+# ---------------------------------------------------------------------------
+# Pretrain
+# ---------------------------------------------------------------------------
+
+
+def deepseek_v41_flash_pretrain_16gpu_bw1300_bf16_test_config() -> ConfigContainer:
     """Return the DeepSeek-V4.1-Flash BW1300 pre-training base config.
     
     Recommended BW1300 baseline: TP=1, PP=1, EP=16, CP=1.
@@ -183,7 +188,3 @@ def deepseek_v41_flash_pretrain_16gpu_BW1300_bf16_test_config() -> ConfigContain
     }
     return cfg
 
-
-__all__ = [
-    "deepseek_v41_flash_pretrain_16gpu_BW1300_bf16_test_config",
-]

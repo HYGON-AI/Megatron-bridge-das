@@ -140,7 +140,7 @@ def dequantize_fp8(weight: torch.Tensor, scale: Optional[torch.Tensor]) -> torch
         )
     dequantized = weight_f.unflatten(0, (-1, row_block)).unflatten(2, (-1, col_block))
     dequantized = dequantized * scale_f[:, None, :, None]
-    return dequantized.flatten(2).flatten(0)
+    return dequantized.flatten(2).flatten(0, 1)
 
 
 def table_row_ranges(

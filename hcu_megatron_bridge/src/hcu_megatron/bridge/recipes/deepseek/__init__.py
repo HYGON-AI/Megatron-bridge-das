@@ -29,7 +29,8 @@ from .deepseek_v4 import (
     deepseek_v4_pro_pretrain_256gpu_bw1000_bf16_test_config,
 )
 from .deepseek_v41 import (
-    deepseek_v41_flash_pretrain_16gpu_BW1300_bf16_test_config,
+    deepseek_v41_flash_peft_32gpu_bw1101_bf16_test_config,
+    deepseek_v41_flash_pretrain_16gpu_bw1300_bf16_test_config,
 )
 
 
@@ -40,5 +41,6 @@ __all__ = [
     "deepseek_v4_flash_sft_32gpu_BW1000_bf16_test_config",
     "deepseek_v4_pro_pretrain_bw1000_bf16_config",
     "deepseek_v4_pro_pretrain_256gpu_bw1000_bf16_test_config",
-    "deepseek_v41_flash_pretrain_16gpu_BW1300_bf16_test_config",
+    "deepseek_v41_flash_peft_32gpu_bw1101_bf16_test_config",
+    "deepseek_v41_flash_pretrain_16gpu_bw1300_bf16_test_config",
 ]
