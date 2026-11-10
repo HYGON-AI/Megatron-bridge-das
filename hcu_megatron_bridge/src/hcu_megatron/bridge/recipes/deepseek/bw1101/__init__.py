@@ -15,10 +15,10 @@
 """BW1101 recipes for DeepSeek models."""
 
 from hcu_megatron.bridge.recipes.deepseek.bw1101.deepseek_v4 import (
-    deepseek_v4_flash_peft_32gpu_bw1101_bf16_test_config,
+    deepseek_v4_flash_peft_32gpu_bw1101_bf16_config,
 )
 
 
 __all__ = [
-    "deepseek_v4_flash_peft_32gpu_bw1101_bf16_test_config",
+    "deepseek_v4_flash_peft_32gpu_bw1101_bf16_config",
 ]

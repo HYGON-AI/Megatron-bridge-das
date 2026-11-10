@@ -25,7 +25,7 @@ RESET="\033[0m"
 
 # Discover supported recipes from the deepseek module
 SUPPORTED_RECIPES=(
-    deepseek_v4_flash_peft_32gpu_bw1101_bf16_test_config
+    deepseek_v4_flash_peft_32gpu_bw1101_bf16_config
 )
 
 # Validate RECIPE argument

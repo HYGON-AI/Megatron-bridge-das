@@ -5,7 +5,7 @@
 |----------|--------|-------------------------|
 | BW1000, 32 GPUs | `deepseek_v4_flash_pretrain_32gpu_bw1000_bf16_test_config` | BF16 Muon |
 | BW1000, 32 GPUs | `deepseek_v4_flash_sft_32gpu_bw1000_bf16_test_config` | BF16 Adam |
-| BW1101, 32 GPUs | `deepseek_v4_flash_peft_32gpu_bw1101_bf16_test_config` | BF16 Adam |
+| BW1101, 32 GPUs | `deepseek_v4_flash_peft_32gpu_bw1101_bf16_config` | BF16 Adam |
 
 
 ## 1、环境准备

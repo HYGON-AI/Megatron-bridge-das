@@ -35,7 +35,7 @@ DEEPSEEK_V4_FLASH_HF_PATH = "deepseek-ai/DeepSeek-V4-Flash-0731"
 # ---------------------------------------------------------------------------
 
 
-def deepseek_v4_flash_peft_32gpu_bw1101_bf16_test_config() -> ConfigContainer:
+def deepseek_v4_flash_peft_32gpu_bw1101_bf16_config() -> ConfigContainer:
     """Return the DeepSeek-V4-Flash BW1101 peft base config.
 
     Recommended BW1101 baseline: TP=1, PP=4, EP=8, CP=1.
