@@ -15,10 +15,10 @@
 """BW1300 recipes for DeepSeek models."""
 
 from hcu_megatron.bridge.recipes.deepseek.bw1300.deepseek_v41 import (
-    deepseek_v41_flash_pretrain_16gpu_BW1300_bf16_test_config,
+    deepseek_v41_flash_pretrain_16gpu_bw1300_bf16_test_config,
 )
 
 
 __all__ = [
-    "deepseek_v41_flash_pretrain_16gpu_BW1300_bf16_test_config",
+    "deepseek_v41_flash_pretrain_16gpu_bw1300_bf16_test_config",
 ]
