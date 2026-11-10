@@ -1,4 +1,4 @@
-# DeepSeek V4 Flash
+# DeepSeek V4.1 Flash
 
 ## Supported
 | Hardware | Recipe | Precision and optimizer |
