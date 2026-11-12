@@ -14,11 +14,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
 """BW1000 recipes for Qwen models."""
 
 from hcu_megatron.bridge.recipes.qwen.bw1000.qwen35 import (
+    qwen35_text_0_8b_pretrain_8gpu_bw1000_bf16_config,
+    qwen35_text_2b_pretrain_8gpu_bw1000_bf16_config,
+    qwen35_text_4b_pretrain_8gpu_bw1000_bf16_config,
+    qwen35_text_9b_pretrain_8gpu_bw1000_bf16_config,
+    qwen35_text_27b_pretrain_8gpu_bw1000_bf16_config,
     qwen35_text_35b_a3b_pretrain_32gpu_bw1000_bf16_config,
+    qwen35_text_122b_a10b_pretrain_32gpu_bw1000_bf16_config,
+    qwen35_text_397b_a17b_pretrain_64gpu_bw1000_bf16_config,
 )
 from hcu_megatron.bridge.recipes.qwen.bw1000.qwen35_vl import (
     qwen35_vl_2b_pretrain_8gpu_bw1000_bf16_config,
@@ -27,6 +33,14 @@ from hcu_megatron.bridge.recipes.qwen.bw1000.qwen35_vl import (
     qwen35_vl_4b_pretrain_8gpu_bw1000_bf16_mock_config,
     qwen35_vl_9b_pretrain_8gpu_bw1000_bf16_config,
     qwen35_vl_9b_pretrain_8gpu_bw1000_bf16_mock_config,
+    qwen35_vl_27b_pretrain_8gpu_bw1000_bf16_config,
+    qwen35_vl_27b_pretrain_8gpu_bw1000_bf16_mock_config,
+    qwen35_vl_35b_a3b_pretrain_16gpu_bw1000_bf16_config,
+    qwen35_vl_35b_a3b_pretrain_16gpu_bw1000_bf16_mock_config,
+    qwen35_vl_122b_a10b_pretrain_8gpu_bw1000_bf16_config,
+    qwen35_vl_122b_a10b_pretrain_8gpu_bw1000_bf16_mock_config,
+    qwen35_vl_397b_a17b_pretrain_32gpu_bw1000_bf16_config,
+    qwen35_vl_397b_a17b_pretrain_32gpu_bw1000_bf16_mock_config,
 )
 from hcu_megatron.bridge.recipes.qwen.bw1000.qwen38 import (
     qwen38_text_2_4t_pretrain_128gpu_bw1000_bf16_test_config,
@@ -34,12 +48,27 @@ from hcu_megatron.bridge.recipes.qwen.bw1000.qwen38 import (
 
 
 __all__ = [
+    "qwen35_text_0_8b_pretrain_8gpu_bw1000_bf16_config",
+    "qwen35_text_2b_pretrain_8gpu_bw1000_bf16_config",
+    "qwen35_text_4b_pretrain_8gpu_bw1000_bf16_config",
+    "qwen35_text_9b_pretrain_8gpu_bw1000_bf16_config",
+    "qwen35_text_27b_pretrain_8gpu_bw1000_bf16_config",
     "qwen35_text_35b_a3b_pretrain_32gpu_bw1000_bf16_config",
+    "qwen35_text_122b_a10b_pretrain_32gpu_bw1000_bf16_config",
+    "qwen35_text_397b_a17b_pretrain_64gpu_bw1000_bf16_config",
     "qwen35_vl_2b_pretrain_8gpu_bw1000_bf16_config",
     "qwen35_vl_2b_pretrain_8gpu_bw1000_bf16_mock_config",
     "qwen35_vl_4b_pretrain_8gpu_bw1000_bf16_config",
     "qwen35_vl_4b_pretrain_8gpu_bw1000_bf16_mock_config",
     "qwen35_vl_9b_pretrain_8gpu_bw1000_bf16_config",
     "qwen35_vl_9b_pretrain_8gpu_bw1000_bf16_mock_config",
+    "qwen35_vl_27b_pretrain_8gpu_bw1000_bf16_config",
+    "qwen35_vl_27b_pretrain_8gpu_bw1000_bf16_mock_config",
+    "qwen35_vl_35b_a3b_pretrain_16gpu_bw1000_bf16_config",
+    "qwen35_vl_35b_a3b_pretrain_16gpu_bw1000_bf16_mock_config",
+    "qwen35_vl_122b_a10b_pretrain_8gpu_bw1000_bf16_config",
+    "qwen35_vl_122b_a10b_pretrain_8gpu_bw1000_bf16_mock_config",
+    "qwen35_vl_397b_a17b_pretrain_32gpu_bw1000_bf16_config",
+    "qwen35_vl_397b_a17b_pretrain_32gpu_bw1000_bf16_mock_config",
     "qwen38_text_2_4t_pretrain_128gpu_bw1000_bf16_test_config",
 ]

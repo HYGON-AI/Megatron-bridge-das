@@ -15,10 +15,12 @@
 # limitations under the License.
 
 from .minimax_m3 import (
+    minimax_m3_10layer_pretrain_16gpu_bw1100_bf16_test_config,
     minimax_m3_pretrain_16gpu_bw1000_bf16_test_config,
 )
 
 
 __all__ = [
     "minimax_m3_pretrain_16gpu_bw1000_bf16_test_config",
+    "minimax_m3_10layer_pretrain_16gpu_bw1100_bf16_test_config",
 ]

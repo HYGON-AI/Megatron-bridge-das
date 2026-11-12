@@ -44,8 +44,6 @@ Third-Party components and their source attribution are documented in [THIRD_PAR
 |GLM                   | GLM-5.2               | ✓          | ✓     |      |[pretrain](docs/models/glm/glm5-2.md)/[sft](docs/models/glm/glm5-2.md)|
 |GLM                   | GLM-5.3               | ✓          |       |      |[pretrain](docs/models/glm/glm5-3.md)|
 |MiniMax               | MiniMax-M3            | ✓          |       |      |[pretrain](docs/models/minimax/minimax-m3.md)|
-|Qwen                  | Qwen3.5-2B            | ✓          |       |      |[pretrain](docs/models/qwen/qwen35-vl-bw1000.md)|
-|Qwen                  | Qwen3.5-4B            | ✓          |       |      |[pretrain](docs/models/qwen/qwen35-vl-bw1000.md)|
-|Qwen                  | Qwen3.5-9B            | ✓          |       |      |[pretrain](docs/models/qwen/qwen35-vl-bw1000.md)|
-|Qwen                  | Qwen3.5-35B-A3B       | ✓          |       |      |[pretrain](docs/models/qwen/qwen3.5-35b-a3b.md)|
-|Qwen                  | Qwen3.8-2.4T-A95B     | ✓          |       |      |[pretrain](docs/models/qwen/qwen3.8-2.4t-a95b.md)|
+|Qwen3.5-text          | Qwen3.5-2B/4B/9B/27B/35B|✓         |       |      |[pretrain](docs/models/qwen/qwen3.5-text.md)|
+|Qwen3.5-vl            | Qwen3.5-2B/4B/9B/27B/35B| ✓        |       |      |[pretrain](docs/models/qwen/qwen35-vl.md)|
+|Qwen3.8               | Qwen3.8-2.4T-A95B     | ✓          |       |      |[pretrain](docs/models/qwen/qwen3.8-2.4t-a95b.md)|

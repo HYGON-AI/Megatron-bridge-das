@@ -4,6 +4,7 @@
 | Hardware | Recipe | Precision and optimizer |
 |----------|--------|-------------------------|
 | BW1000, 16 GPUs | `minimax_m3_pretrain_16gpu_bw1000_bf16_test_config` | BF16 Adam |
+| BW1100, 16 GPUs（10 层 test，PP2/EP8） | `minimax_m3_10layer_pretrain_16gpu_bw1100_bf16_test_config` | BF16 Adam |
 
 ## 1、环境准备
 

@@ -21,8 +21,11 @@ from __future__ import annotations
 from hcu_megatron.bridge.recipes.qwen.bw1000.qwen38 import (
     qwen38_text_2_4t_pretrain_128gpu_bw1000_bf16_test_config,
 )
-
+from hcu_megatron.bridge.recipes.qwen.bw1100.qwen38 import (
+    qwen38_text_2_4t_pretrain_128gpu_bw1100_bf16_test_config,
+)
 
 __all__ = [
     "qwen38_text_2_4t_pretrain_128gpu_bw1000_bf16_test_config",
+    "qwen38_text_2_4t_pretrain_128gpu_bw1100_bf16_test_config",
 ]

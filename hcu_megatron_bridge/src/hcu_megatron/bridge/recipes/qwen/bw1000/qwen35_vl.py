@@ -48,7 +48,7 @@ from megatron.bridge.training.mixed_precision import bf16_mixed
 
 
 @dataclass(frozen=True)
-class _Qwen35VLDenseSpec:
+class _Qwen35VLSpec:
     """Deployment topology for one dense Qwen3.5-VL size on a BW1000 node.
 
     Only deployment choices live here.  Architecture values (layer count,
@@ -63,10 +63,14 @@ class _Qwen35VLDenseSpec:
     tensor_model_parallel_size: int
     pipeline_model_parallel_size: int
     sequence_parallel: bool
+    # MoE sizes spread experts over EP; dense sizes must keep this at 1 or
+    # Megatron-Core rejects the config.
+    expert_model_parallel_size: int = 1
+    moe: bool = False
 
 
-_QWEN35_VL_DENSE_SPECS = {
-    "2B": _Qwen35VLDenseSpec(
+_QWEN35_VL_SPECS = {
+    "2B": _Qwen35VLSpec(
         size="2B",
         hf_default="Qwen/Qwen3.5-2B",
         seq_length=4096,
@@ -76,7 +80,7 @@ _QWEN35_VL_DENSE_SPECS = {
     ),
     # Sequence parallelism requires tensor parallelism, so 4B uses TP2 rather
     # than the TP1/PP2/SP combination, which ModelParallelConfig rejects.
-    "4B": _Qwen35VLDenseSpec(
+    "4B": _Qwen35VLSpec(
         size="4B",
         hf_default="Qwen/Qwen3.5-4B",
         seq_length=4096,
@@ -84,7 +88,7 @@ _QWEN35_VL_DENSE_SPECS = {
         pipeline_model_parallel_size=1,
         sequence_parallel=True,
     ),
-    "9B": _Qwen35VLDenseSpec(
+    "9B": _Qwen35VLSpec(
         size="9B",
         hf_default="Qwen/Qwen3.5-9B",
         seq_length=2048,
@@ -92,15 +96,56 @@ _QWEN35_VL_DENSE_SPECS = {
         pipeline_model_parallel_size=2,
         sequence_parallel=True,
     ),
+    # Larger sizes need more than one 8-GPU node; TP*PP (dense) or PP*EP (MoE)
+    # fixes the minimum node count and extra nodes only widen data parallelism.
+    "27B": _Qwen35VLSpec(
+        size="27B",
+        hf_default="Qwen/Qwen3.5-27B",
+        seq_length=4096,
+        tensor_model_parallel_size=4,
+        pipeline_model_parallel_size=2,
+        sequence_parallel=True,
+    ),
+    "35B-A3B": _Qwen35VLSpec(
+        size="35B-A3B",
+        hf_default="Qwen/Qwen3.5-35B-A3B",
+        seq_length=4096,
+        tensor_model_parallel_size=1,
+        pipeline_model_parallel_size=2,
+        # SP needs TP>1, so it stays off for this TP1 topology.
+        sequence_parallel=False,
+        expert_model_parallel_size=8,
+        moe=True,
+    ),
+    "122B-A10B": _Qwen35VLSpec(
+        size="122B-A10B",
+        hf_default="Qwen/Qwen3.5-122B-A10B",
+        seq_length=4096,
+        tensor_model_parallel_size=4,
+        pipeline_model_parallel_size=2,
+        sequence_parallel=True,
+        expert_model_parallel_size=4,
+        moe=True,
+    ),
+    "397B-A17B": _Qwen35VLSpec(
+        size="397B-A17B",
+        hf_default="Qwen/Qwen3.5-397B-A17B",
+        seq_length=4096,
+        tensor_model_parallel_size=4,
+        pipeline_model_parallel_size=4,
+        sequence_parallel=True,
+        expert_model_parallel_size=8,
+        moe=True,
+    ),
 }
 
-def _model_env(spec: _Qwen35VLDenseSpec, name: str, default: str | None = None) -> str | None:
+def _model_env(spec: _Qwen35VLSpec, name: str, default: str | None = None) -> str | None:
     """Read a generic variable, then the model-specific compatibility name."""
 
     return os.environ.get(name) or os.environ.get(f"QWEN35_{spec.size}_{name}", default)
 
 
-def _hf_path(spec: _Qwen35VLDenseSpec) -> str:
+def _hf_path(spec: _Qwen35VLSpec) -> str:
     """Resolve the HuggingFace checkpoint this size loads from.
 
     ``LOCAL_HF_PATH`` comes first because the HCU patch layer already redirects
@@ -117,7 +162,7 @@ def _hf_path(spec: _Qwen35VLDenseSpec) -> str:
     )
 
 
-def _env_int(spec: _Qwen35VLDenseSpec, name: str, default: int) -> int:
+def _env_int(spec: _Qwen35VLSpec, name: str, default: int) -> int:
     """Read an integer knob, falling back to ``default`` when unset or blank."""
 
     raw_value = _model_env(spec, name)
@@ -126,8 +171,8 @@ def _env_int(spec: _Qwen35VLDenseSpec, name: str, default: int) -> int:
     return int(raw_value)
 
 
-def _qwen35_vl_dense_pretrain_config(
-    spec: _Qwen35VLDenseSpec,
+def _qwen35_vl_pretrain_config(
+    spec: _Qwen35VLSpec,
     *,
     dataset_backend: Literal["energon", "mock"],
 ) -> ConfigContainer:
@@ -152,6 +197,7 @@ def _qwen35_vl_dense_pretrain_config(
     cfg.model.context_parallel_size = 1
     cfg.model.virtual_pipeline_model_parallel_size = None
     cfg.model.sequence_parallel = spec.sequence_parallel
+    cfg.model.expert_model_parallel_size = spec.expert_model_parallel_size
     cfg.model.pipeline_dtype = torch.bfloat16 if spec.pipeline_model_parallel_size > 1 else None
 
     # Full pretraining: no frozen submodules.  Upstream's alignment-stage
@@ -167,6 +213,11 @@ def _qwen35_vl_dense_pretrain_config(
     cfg.model.bias_activation_fusion = False
     cfg.model.moe_router_fusion = False
     cfg.model.moe_permute_fusion = False
+    if spec.moe:
+        # alltoall is Megatron-Core's built-in NCCL dispatcher; the flex/hybridep
+        # path needs the HybridEP package, which this cluster does not ship.
+        cfg.model.moe_token_dispatcher_type = "alltoall"
+        cfg.model.moe_router_dtype = "fp32"
     # AttnBackend is an enum, and the config compares it by identity, so a
     # plain "auto" string would never match and would break backend dispatch.
     cfg.model.attention_backend = AttnBackend.auto
@@ -271,37 +322,84 @@ def _qwen35_vl_dense_pretrain_config(
 def qwen35_vl_2b_pretrain_8gpu_bw1000_bf16_config() -> ConfigContainer:
     """Return the Energon-backed Qwen3.5-VL 2B BW1000 recipe."""
 
-    return _qwen35_vl_dense_pretrain_config(_QWEN35_VL_DENSE_SPECS["2B"], dataset_backend="energon")
+    return _qwen35_vl_pretrain_config(_QWEN35_VL_SPECS["2B"], dataset_backend="energon")
 
 
 def qwen35_vl_2b_pretrain_8gpu_bw1000_bf16_mock_config() -> ConfigContainer:
     """Return the synthetic-data Qwen3.5-VL 2B BW1000 smoke-test recipe."""
 
-    return _qwen35_vl_dense_pretrain_config(_QWEN35_VL_DENSE_SPECS["2B"], dataset_backend="mock")
+    return _qwen35_vl_pretrain_config(_QWEN35_VL_SPECS["2B"], dataset_backend="mock")
 
 
 def qwen35_vl_4b_pretrain_8gpu_bw1000_bf16_config() -> ConfigContainer:
     """Return the Energon-backed Qwen3.5-VL 4B BW1000 recipe."""
 
-    return _qwen35_vl_dense_pretrain_config(_QWEN35_VL_DENSE_SPECS["4B"], dataset_backend="energon")
+    return _qwen35_vl_pretrain_config(_QWEN35_VL_SPECS["4B"], dataset_backend="energon")
 
 
 def qwen35_vl_4b_pretrain_8gpu_bw1000_bf16_mock_config() -> ConfigContainer:
     """Return the synthetic-data Qwen3.5-VL 4B BW1000 smoke-test recipe."""
 
-    return _qwen35_vl_dense_pretrain_config(_QWEN35_VL_DENSE_SPECS["4B"], dataset_backend="mock")
+    return _qwen35_vl_pretrain_config(_QWEN35_VL_SPECS["4B"], dataset_backend="mock")
 
 
 def qwen35_vl_9b_pretrain_8gpu_bw1000_bf16_config() -> ConfigContainer:
     """Return the Energon-backed Qwen3.5-VL 9B BW1000 recipe."""
 
-    return _qwen35_vl_dense_pretrain_config(_QWEN35_VL_DENSE_SPECS["9B"], dataset_backend="energon")
+    return _qwen35_vl_pretrain_config(_QWEN35_VL_SPECS["9B"], dataset_backend="energon")
 
 
 def qwen35_vl_9b_pretrain_8gpu_bw1000_bf16_mock_config() -> ConfigContainer:
     """Return the synthetic-data Qwen3.5-VL 9B BW1000 smoke-test recipe."""
 
-    return _qwen35_vl_dense_pretrain_config(_QWEN35_VL_DENSE_SPECS["9B"], dataset_backend="mock")
+    return _qwen35_vl_pretrain_config(_QWEN35_VL_SPECS["9B"], dataset_backend="mock")
+
+def qwen35_vl_27b_pretrain_8gpu_bw1000_bf16_config() -> ConfigContainer:
+    """Return the Energon-backed Qwen3.5-VL 27B BW1000 recipe."""
+
+    return _qwen35_vl_pretrain_config(_QWEN35_VL_SPECS["27B"], dataset_backend="energon")
+
+
+def qwen35_vl_27b_pretrain_8gpu_bw1000_bf16_mock_config() -> ConfigContainer:
+    """Return the synthetic-data Qwen3.5-VL 27B BW1000 smoke-test recipe."""
+
+    return _qwen35_vl_pretrain_config(_QWEN35_VL_SPECS["27B"], dataset_backend="mock")
+
+
+def qwen35_vl_35b_a3b_pretrain_16gpu_bw1000_bf16_config() -> ConfigContainer:
+    """Return the Energon-backed Qwen3.5-VL 35B-A3B BW1000 recipe."""
+
+    return _qwen35_vl_pretrain_config(_QWEN35_VL_SPECS["35B-A3B"], dataset_backend="energon")
+
+
+def qwen35_vl_35b_a3b_pretrain_16gpu_bw1000_bf16_mock_config() -> ConfigContainer:
+    """Return the synthetic-data Qwen3.5-VL 35B-A3B BW1000 smoke-test recipe."""
+
+    return _qwen35_vl_pretrain_config(_QWEN35_VL_SPECS["35B-A3B"], dataset_backend="mock")
+
+
+def qwen35_vl_122b_a10b_pretrain_8gpu_bw1000_bf16_config() -> ConfigContainer:
+    """Return the Energon-backed Qwen3.5-VL 122B-A10B BW1000 recipe."""
+
+    return _qwen35_vl_pretrain_config(_QWEN35_VL_SPECS["122B-A10B"], dataset_backend="energon")
+
+
+def qwen35_vl_122b_a10b_pretrain_8gpu_bw1000_bf16_mock_config() -> ConfigContainer:
+    """Return the synthetic-data Qwen3.5-VL 122B-A10B BW1000 smoke-test recipe."""
+
+    return _qwen35_vl_pretrain_config(_QWEN35_VL_SPECS["122B-A10B"], dataset_backend="mock")
+
+
+def qwen35_vl_397b_a17b_pretrain_32gpu_bw1000_bf16_config() -> ConfigContainer:
+    """Return the Energon-backed Qwen3.5-VL 397B-A17B BW1000 recipe."""
+
+    return _qwen35_vl_pretrain_config(_QWEN35_VL_SPECS["397B-A17B"], dataset_backend="energon")
+
+
+def qwen35_vl_397b_a17b_pretrain_32gpu_bw1000_bf16_mock_config() -> ConfigContainer:
+    """Return the synthetic-data Qwen3.5-VL 397B-A17B BW1000 smoke-test recipe."""
+
+    return _qwen35_vl_pretrain_config(_QWEN35_VL_SPECS["397B-A17B"], dataset_backend="mock")
 
 
 __all__ = [
@@ -311,4 +409,12 @@ __all__ = [
     "qwen35_vl_4b_pretrain_8gpu_bw1000_bf16_mock_config",
     "qwen35_vl_9b_pretrain_8gpu_bw1000_bf16_config",
     "qwen35_vl_9b_pretrain_8gpu_bw1000_bf16_mock_config",
+    "qwen35_vl_27b_pretrain_8gpu_bw1000_bf16_config",
+    "qwen35_vl_27b_pretrain_8gpu_bw1000_bf16_mock_config",
+    "qwen35_vl_35b_a3b_pretrain_16gpu_bw1000_bf16_config",
+    "qwen35_vl_35b_a3b_pretrain_16gpu_bw1000_bf16_mock_config",
+    "qwen35_vl_122b_a10b_pretrain_8gpu_bw1000_bf16_config",
+    "qwen35_vl_122b_a10b_pretrain_8gpu_bw1000_bf16_mock_config",
+    "qwen35_vl_397b_a17b_pretrain_32gpu_bw1000_bf16_config",
+    "qwen35_vl_397b_a17b_pretrain_32gpu_bw1000_bf16_mock_config",
 ]

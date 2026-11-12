@@ -18,6 +18,8 @@
 
 from __future__ import annotations
 
+import os
+
 import torch
 from transformers import AutoConfig
 
@@ -28,7 +30,14 @@ from megatron.bridge.training.config import ConfigContainer
 from megatron.bridge.training.mixed_precision import bf16_mixed
 
 
-_QWEN38_2_4T_A95B_BASE = "Qwen/Qwen3.8-2.4T-A95B"
+def _hf_path() -> str:
+    """Resolve the HuggingFace checkpoint this recipe loads from.
+
+    ``LOCAL_HF_PATH`` comes first so the launch scripts can point at an
+    on-disk HF snapshot; without it, reading the tokenizer and config
+    would fall back to the hub name below.
+    """
+    return os.environ.get("LOCAL_HF_PATH") or "Qwen/Qwen3.8-2.4T-A95B"
 
 
 # ---------------------------------------------------------------------------
@@ -40,7 +49,7 @@ def qwen38_text_2_4t_pretrain_128gpu_bw1000_bf16_test_config() -> ConfigContaine
     """Return a Qwen3.8-2.4T-A95B pretraining config for 128 BW1000 GPUs."""
     cfg = _pretrain_common()
 
-    text_config = AutoConfig.from_pretrained(_QWEN38_2_4T_A95B_BASE)
+    text_config = AutoConfig.from_pretrained(_hf_path())
     # The nested text config intentionally omits ``architectures``. AutoBridge
     # needs it to select the registered causal-LM bridge instead of the VLM.
     text_config.architectures = ["Qwen3_5MoeForCausalLM"]
@@ -51,7 +60,7 @@ def qwen38_text_2_4t_pretrain_128gpu_bw1000_bf16_test_config() -> ConfigContaine
     # ========== test config ========== 
     
     cfg.model = AutoBridge.from_hf_config(text_config).to_megatron_provider(load_weights=False)
-    cfg.tokenizer.tokenizer_model = _QWEN38_2_4T_A95B_BASE
+    cfg.tokenizer.tokenizer_model = _hf_path()
 
     # ========== test config ==========
     cfg.model.num_layers = 4

@@ -27,7 +27,18 @@ RESET="\033[0m"
 
 # Discover supported recipes from the qwen35 module
 SUPPORTED_RECIPES=(
+    qwen35_text_0_8b_pretrain_8gpu_bw1000_bf16_config
+    qwen35_text_2b_pretrain_8gpu_bw1000_bf16_config
+    qwen35_text_4b_pretrain_8gpu_bw1000_bf16_config
+    qwen35_text_9b_pretrain_8gpu_bw1000_bf16_config
+    qwen35_text_27b_pretrain_8gpu_bw1000_bf16_config
     qwen35_text_35b_a3b_pretrain_32gpu_bw1000_bf16_config
+    qwen35_text_0_8b_pretrain_8gpu_bw1100_bf16_config
+    qwen35_text_2b_pretrain_8gpu_bw1100_bf16_config
+    qwen35_text_4b_pretrain_8gpu_bw1100_bf16_config
+    qwen35_text_9b_pretrain_8gpu_bw1100_bf16_config
+    qwen35_text_27b_pretrain_8gpu_bw1100_bf16_config
+    qwen35_text_35b_a3b_pretrain_16gpu_bw1100_bf16_config
 )
 
 # Validate RECIPE argument
@@ -74,8 +85,13 @@ fi
 # for that node's GPUs. The remote command is assembled as a string
 # because --node_rank must stay literal until it is evaluated on the
 # remote host, where mpirun sets OMPI_COMM_WORLD_RANK.
+# Only the multi-node mpirun branch below uses this file; single-node runs have
+# no hostfile at all, and feeding grep an empty HOSTFILE would make it exit 1
+# and kill the script under `set -euo pipefail`.
 HOSTFILE_SLOTS=${CURRENT_DIR}/hostfile_slots
-grep -ve '^[[:space:]]*$' ${HOSTFILE} | sed -n "1,${NNODES}p" | awk '{print $1" slots=1"}' > ${HOSTFILE_SLOTS}
+if [[ -n ${HOSTFILE} ]]; then
+    grep -ve '^[[:space:]]*$' "${HOSTFILE}" | sed -n "1,${NNODES}p" | awk '{print $1" slots=1"}' > "${HOSTFILE_SLOTS}"
+fi
 WORLD_GPUS=$((NNODES * GPUS))
 
 # ===================================== Data Config =====================================
@@ -105,9 +121,35 @@ OPTIMIZER_CONFIG=(
 )
 
 # ===================================== Parallel Config =====================================
-TP="${TENSOR_PARALLEL:-1}"
-PP="${PIPELINE_PARALLEL:-4}"
-EP="${EXPERT_PARALLEL:-8}"
+# Parse the size and platform from the recipe name:
+#   qwen35_text_<size-slug>_pretrain_<N>gpu_<platform>_bf16_config
+SIZE=$(echo "${RECIPE}" | sed -n 's/^qwen35_text_\([0-9][0-9a-z_]*[0-9a-z]\)_pretrain_.*/\1/p')
+PLATFORM=$(echo "${RECIPE}" | sed -n 's/^.*_\(bw[0-9]\{4\}\)_bf16_config$/\1/p')
+if [[ -z ${SIZE} || -z ${PLATFORM} ]]; then
+    echo -e "${RED}ERROR: cannot parse size/platform from recipe '${RECIPE}'.${RESET}"
+    exit 1
+fi
+
+# Per-size defaults; the 144 GB bw1100 cards fit narrower TP/PP than bw1000
+# for the same model. Every value stays overridable from the environment
+# (TENSOR_PARALLEL / PIPELINE_PARALLEL / EXPERT_PARALLEL).
+case "${SIZE}" in
+    0_8b|2b)  TP_DEFAULT=1; PP_DEFAULT=1; EP_DEFAULT=1 ;;
+    4b|9b)    TP_DEFAULT=2; PP_DEFAULT=1; EP_DEFAULT=1 ;;
+    27b)      TP_DEFAULT=4; PP_DEFAULT=2; EP_DEFAULT=1 ;;
+    35b_a3b)  TP_DEFAULT=1; PP_DEFAULT=4; EP_DEFAULT=8 ;;
+    *)  echo -e "${RED}ERROR: unknown model size '${SIZE}' in ${RECIPE}.${RESET}"; exit 1 ;;
+esac
+if [[ ${PLATFORM} == bw1100 ]]; then
+    case "${SIZE}" in
+        4b|9b)   TP_DEFAULT=1 ;;
+        27b)     TP_DEFAULT=2 ;;
+        35b_a3b) PP_DEFAULT=1 ;;
+    esac
+fi
+TP="${TENSOR_PARALLEL:-${TP_DEFAULT}}"
+PP="${PIPELINE_PARALLEL:-${PP_DEFAULT}}"
+EP="${EXPERT_PARALLEL:-${EP_DEFAULT}}"
 ETP="${EXPERT_TENSOR_PARALLEL:-1}"
 CP="${CONTEXT_PARALLEL:-1}"
 
@@ -163,7 +205,7 @@ PROFILING_CONFIG=(
 # ===================================== Summary =====================================
 mkdir -p "${SAVE_DIR}/train_logs"
 echo "======================================"
-echo -e "${YELLOW}Qwen3.5-35B-A3B text-only pretrain${RESET}"
+echo -e "${YELLOW}Qwen3.5 text-only pretrain${RESET}"
 echo "======================================"
 echo "Mode:        ${MODE}"
 echo "Profiling:   ${PROFILING:-off}"
@@ -196,8 +238,10 @@ SAVE_LOG=${SAVE_DIR}/train_logs/mpi_$(date +%F-%H%M).log
 
 case "${MODE}" in
     dryrun)
+        # shellcheck source=/dev/null
         source /opt/dtk/env.sh
-        source ${BRIDGE_ENV_SCRIPT}
+        # shellcheck source=/dev/null
+        source "${BRIDGE_ENV_SCRIPT}"
         python ${MEGATRON_PATH}/run_recipe.py \
             --recipe ${RECIPE} \
             --mode pretrain \
@@ -237,7 +281,10 @@ case "${MODE}" in
         fi
 
         if (( NNODES == 1 )); then
-            source ${BRIDGE_ENV_SCRIPT}
+            # shellcheck source=/dev/null
+            source /opt/dtk/env.sh
+            # shellcheck source=/dev/null
+            source "${BRIDGE_ENV_SCRIPT}"
             torchrun "${TORCHRUN_ARGS[@]}" "${RECIPE_ARGS[@]}" 2>&1 | tee "${SAVE_LOG}"
         else
             TORCHRUN_QUOTED="$(printf '%q ' "${TORCHRUN_ARGS[@]}")"

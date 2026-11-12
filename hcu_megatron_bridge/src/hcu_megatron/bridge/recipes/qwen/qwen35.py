@@ -19,10 +19,41 @@
 from __future__ import annotations
 
 from hcu_megatron.bridge.recipes.qwen.bw1000.qwen35 import (
+    qwen35_text_0_8b_pretrain_8gpu_bw1000_bf16_config,
+    qwen35_text_2b_pretrain_8gpu_bw1000_bf16_config,
+    qwen35_text_4b_pretrain_8gpu_bw1000_bf16_config,
+    qwen35_text_9b_pretrain_8gpu_bw1000_bf16_config,
+    qwen35_text_27b_pretrain_8gpu_bw1000_bf16_config,
     qwen35_text_35b_a3b_pretrain_32gpu_bw1000_bf16_config,
+    qwen35_text_122b_a10b_pretrain_32gpu_bw1000_bf16_config,
+    qwen35_text_397b_a17b_pretrain_64gpu_bw1000_bf16_config,
+)
+from hcu_megatron.bridge.recipes.qwen.bw1100.qwen35 import (
+    qwen35_text_0_8b_pretrain_8gpu_bw1100_bf16_config,
+    qwen35_text_2b_pretrain_8gpu_bw1100_bf16_config,
+    qwen35_text_4b_pretrain_8gpu_bw1100_bf16_config,
+    qwen35_text_9b_pretrain_8gpu_bw1100_bf16_config,
+    qwen35_text_27b_pretrain_8gpu_bw1100_bf16_config,
+    qwen35_text_35b_a3b_pretrain_16gpu_bw1100_bf16_config,
+    qwen35_text_122b_a10b_pretrain_32gpu_bw1100_bf16_config,
+    qwen35_text_397b_a17b_pretrain_64gpu_bw1100_bf16_config,
 )
 
-
 __all__ = [
+    "qwen35_text_0_8b_pretrain_8gpu_bw1000_bf16_config",
+    "qwen35_text_2b_pretrain_8gpu_bw1000_bf16_config",
+    "qwen35_text_4b_pretrain_8gpu_bw1000_bf16_config",
+    "qwen35_text_9b_pretrain_8gpu_bw1000_bf16_config",
+    "qwen35_text_27b_pretrain_8gpu_bw1000_bf16_config",
     "qwen35_text_35b_a3b_pretrain_32gpu_bw1000_bf16_config",
+    "qwen35_text_122b_a10b_pretrain_32gpu_bw1000_bf16_config",
+    "qwen35_text_397b_a17b_pretrain_64gpu_bw1000_bf16_config",
+    "qwen35_text_0_8b_pretrain_8gpu_bw1100_bf16_config",
+    "qwen35_text_2b_pretrain_8gpu_bw1100_bf16_config",
+    "qwen35_text_4b_pretrain_8gpu_bw1100_bf16_config",
+    "qwen35_text_9b_pretrain_8gpu_bw1100_bf16_config",
+    "qwen35_text_27b_pretrain_8gpu_bw1100_bf16_config",
+    "qwen35_text_35b_a3b_pretrain_16gpu_bw1100_bf16_config",
+    "qwen35_text_122b_a10b_pretrain_32gpu_bw1100_bf16_config",
+    "qwen35_text_397b_a17b_pretrain_64gpu_bw1100_bf16_config",
 ]
