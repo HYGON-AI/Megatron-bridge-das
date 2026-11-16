@@ -5,6 +5,7 @@
 |----------|--------|-------------------------|
 | BW1300, 16 GPUs | `glm53_flash_pretrain_16gpu_bw1300_bf16_test_config` | BF16 Adam |
 | BW1101, 32 GPUs | `glm53_flash_sft_32gpu_bw1101_bf16_test_config` | BF16 Adam |
+| BW1101, 32 GPUs | `glm53_flash_peft_32gpu_bw1101_bf16_config` | BF16 Adam |
 
 
 ## 1、环境准备
