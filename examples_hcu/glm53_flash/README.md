@@ -94,7 +94,7 @@ cd /workspace/Megatron-bridge-das
 python3 examples_hcu/data_preparation/prepare_wikitext103.py --parquet-dir /workspace/wikitext/wikitext-103-raw-v1/ --output-dir  /workspace/wikitext103 --tokenizer-model /workspace/GLM-5.3-Flash --workers 32
 ```
 
-### 2.2 sft
+### 2.2 sft、peft
 
 数据集下载
 ```python
@@ -178,6 +178,24 @@ export LOCAL_HF_PATH=${LOCAL_HF_PATH:-/path/to/GLM-5.3-Flash}
 
 RECIPE: SUPPORTED_RECIPES in train_glm53_flash_sft.sh
 MODE: dryrun or sft # 配置dryrun时不需要再跟HOSTFILE和NODES参数
+HOSTFILE: path to hostfile
+NODES: The number of nodes you use
+
+```
+
+#### peft
+```shell
+docker exec -it "your container name" bash
+cd /workspace/Megatron-bridge-das/examples_hcu/glm53_flash
+
+PORT=${PORT:-12345} # Set the SSH port by running /usr/sbin/sshd -p <port> inside the Docker container on each node. For example: /usr/sbin/sshd -p 12345
+DATA_PATH=${DATA_PATH:-/path/to/tulu-3-sft-mixture}
+export LOCAL_HF_PATH=${LOCAL_HF_PATH:-/path/to/GLM-5.3-Flash}
+
+./train_glm53_flash_peft.sh <RECIPE> <MODE> [HOSTFILE] [NODES]
+
+RECIPE: SUPPORTED_RECIPES in train_glm53_flash_peft.sh
+MODE: dryrun or peft # 配置dryrun时不需要再跟HOSTFILE和NODES参数
 HOSTFILE: path to hostfile
 NODES: The number of nodes you use
 
