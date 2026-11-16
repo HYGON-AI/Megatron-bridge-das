@@ -1,0 +1,100 @@
+diff --git a/src/megatron/bridge/recipes/deepseek/__init__.py b/src/megatron/bridge/recipes/deepseek/__init__.py
+index c1b8a11..5551818 100644
+--- a/src/megatron/bridge/recipes/deepseek/__init__.py
++++ b/src/megatron/bridge/recipes/deepseek/__init__.py
+@@ -53,6 +53,9 @@ from .gb300.deepseek_v4 import (
+     deepseek_v4_pro_pretrain_32gpu_gb300_bf16_config,
+     deepseek_v4_pro_pretrain_32gpu_gb300_fp8mx_config,
+ )
++from .bw1101.deepseek_v4 import (
++    deepseek_v4_flash_peft_32gpu_bw1101_bf16_config,
++)
+ 
+ 
+ __all__ = [
+@@ -63,6 +66,7 @@ __all__ = [
+     # DeepSeek V4
+     "deepseek_v4_flash_peft_openmath_thinking_packed_config",
+     "deepseek_v4_flash_peft_openmath_thinking_packed_gb200_config",
++    "deepseek_v4_flash_peft_32gpu_bw1101_bf16_config",
+     "deepseek_v4_flash_pretrain_config",
+     "deepseek_v4_flash_pretrain_gb200_config",
+     "deepseek_v4_flash_pretrain_muon_config",
+diff --git a/src/megatron/bridge/recipes/deepseek/bw1101/__init__.py b/src/megatron/bridge/recipes/deepseek/bw1101/__init__.py
+new file mode 100644
+index 0000000..f1f852d
+--- /dev/null
++++ b/src/megatron/bridge/recipes/deepseek/bw1101/__init__.py
+@@ -0,0 +1,20 @@
++# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
++# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
++#
++# Licensed under the Apache License, Version 2.0 (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy of the License at
++#
++#     http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++from megatron.bridge.recipes.deepseek.bw1101.deepseek_v4 import *  # noqa: F403
++
++
++__all__ = [
++    "deepseek_v4_flash_peft_32gpu_bw1101_bf16_config",
++]
+diff --git a/src/megatron/bridge/recipes/deepseek/bw1101/deepseek_v4.py b/src/megatron/bridge/recipes/deepseek/bw1101/deepseek_v4.py
+new file mode 100644
+index 0000000..89e8b51
+--- /dev/null
++++ b/src/megatron/bridge/recipes/deepseek/bw1101/deepseek_v4.py
+@@ -0,0 +1,46 @@
++# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
++# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
++# Modified by Hygon Information Technology Co., Ltd., 2026.
++#
++# Licensed under the Apache License, Version 2.0 (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy of the License at
++#
++#     http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++"""BW1101 recipe for DeepSeek-V4-Flash PEFT."""
++
++from __future__ import annotations
++
++import torch
++
++from megatron.bridge.recipes.deepseek import (
++    deepseek_v4_flash_peft_openmath_thinking_packed_gb200_config,
++)
++from megatron.bridge.training.config import ConfigContainer
++
++
++def _deepseek_v4_supports_bw_fused_kernels() -> bool:
++    """Return whether DSv4 BW-only fused kernels should default on."""
++    if not torch.cuda.is_available():
++        return False
++
++    major, _minor = torch.cuda.get_device_capability()
++    return major >= 9
++
++
++def deepseek_v4_flash_peft_32gpu_bw1101_bf16_config() -> ConfigContainer:
++    """Return the BW1101-optimized packed OpenMath LoRA config."""
++    cfg = deepseek_v4_flash_peft_openmath_thinking_packed_gb200_config()
++    cfg.model.use_fused_mhc = _deepseek_v4_supports_bw_fused_kernels()
++    return cfg
++
++
++__all__ = [
++    "deepseek_v4_flash_peft_32gpu_bw1101_bf16_config",
++]

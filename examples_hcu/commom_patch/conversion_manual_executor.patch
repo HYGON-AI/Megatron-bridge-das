@@ -1,0 +1,465 @@
+diff --git a/scripts/conversion/arguments.py b/scripts/conversion/arguments.py
+index a47e2f5..19bf764 100644
+--- a/scripts/conversion/arguments.py
++++ b/scripts/conversion/arguments.py
+@@ -30,6 +30,43 @@ from slurm_wait import MIN_POLL_INTERVAL, slurm_poll_interval  # noqa: E402
+ 
+ DTYPE_CHOICES = ("bfloat16", "float16", "float32")
+ 
++MOE_TOKEN_DISPATCHER_CHOICES = ("allgather", "alltoall", "flex")
++MOE_FLEX_BACKEND_CHOICES = ("deepep", "deepepv2", "hybridep", "ncclep")
++
++
++def _add_moe_override_arguments(parser: argparse.ArgumentParser) -> None:
++    """Add optional overrides for MoE token dispatcher settings (GPU backend only).
++
++    These override values that the model bridge writes onto the GPT model
++    provider (for example DeepSeek-V4 hard-codes ``flex`` + ``hybridep``, which
++    requires the HybridEP DeepEP fork). On CPU conversion the flags are ignored.
++    """
++    moe = parser.add_argument_group("MoE dispatcher overrides (GPU only)")
++    moe.add_argument(
++        "--moe-token-dispatcher-type",
++        choices=MOE_TOKEN_DISPATCHER_CHOICES,
++        default=None,
++        help=(
++            "Override the MoE token dispatcher (allgather / alltoall / flex). "
++            "Useful when the model bridge default requires an unavailable backend."
++        ),
++    )
++    moe.add_argument(
++        "--moe-flex-dispatcher-backend",
++        choices=MOE_FLEX_BACKEND_CHOICES,
++        default=None,
++        help=(
++            "When --moe-token-dispatcher-type=flex, choose the flex backend "
++            "(deepep / deepepv2 / hybridep / ncclep)."
++        ),
++    )
++    moe.add_argument(
++        "--moe-flex-dispatcher-num-sms",
++        type=int,
++        default=None,
++        help="Override moe_flex_dispatcher_num_sms (flex dispatcher only).",
++    )
++
+ 
+ def _add_execution_arguments(parser: argparse.ArgumentParser, *, default_device: str = "cpu") -> None:
+     """Add NeMo Run execution arguments to a conversion subcommand."""
+@@ -44,9 +81,14 @@ def _add_execution_arguments(parser: argparse.ArgumentParser, *, default_device:
+     )
+     execution.add_argument(
+         "--executor",
+-        choices=("local", "slurm"),
++        choices=("local", "slurm", "manual"),
+         default="local",
+-        help="NeMo Run executor (default: local).",
++        help=(
++            "NeMo Run executor (default: local). "
++            "'manual' skips NeMo Run and directly runs torchrun on this node; "
++            "use it for multi-node GPU conversion without Slurm (invoke the "
++            "same command on each node, varying only --node-rank)."
++        ),
+     )
+     execution.add_argument(
+         "--device",
+@@ -129,6 +171,23 @@ def _add_execution_arguments(parser: argparse.ArgumentParser, *, default_device:
+         action="store_true",
+         help="Return after submitting a Slurm job instead of waiting for conversion to finish.",
+     )
++    execution.add_argument(
++        "--node-rank",
++        type=int,
++        default=0,
++        help="Rank of this node in the multi-node group (manual executor only, default: 0).",
++    )
++    execution.add_argument(
++        "--master-addr",
++        default="127.0.0.1",
++        help="Rendezvous host for torchrun (manual executor, default: 127.0.0.1).",
++    )
++    execution.add_argument(
++        "--master-port",
++        type=int,
++        default=29500,
++        help="Rendezvous port for torchrun (manual executor, default: 29500).",
++    )
+ 
+ 
+ def _add_parallelism_arguments(
+@@ -219,6 +278,7 @@ def _add_common_conversion_arguments(parser: argparse.ArgumentParser, *, include
+     )
+ 
+     _add_parallelism_arguments(parser, include_distributed_timeout=True)
++    _add_moe_override_arguments(parser)
+ 
+ 
+ def _add_roundtrip_arguments(parser: argparse.ArgumentParser, *, include_execution: bool) -> None:
+@@ -344,6 +404,19 @@ Examples:
+     return parser
+ 
+ 
++def _append_moe_overrides(args: argparse.Namespace, worker_args: list[str]) -> None:
++    """Forward MoE dispatcher overrides to the conversion worker."""
++    dispatcher_type = getattr(args, "moe_token_dispatcher_type", None)
++    flex_backend = getattr(args, "moe_flex_dispatcher_backend", None)
++    flex_num_sms = getattr(args, "moe_flex_dispatcher_num_sms", None)
++    if dispatcher_type:
++        worker_args.extend(["--moe-token-dispatcher-type", dispatcher_type])
++    if flex_backend:
++        worker_args.extend(["--moe-flex-dispatcher-backend", flex_backend])
++    if flex_num_sms is not None:
++        worker_args.extend(["--moe-flex-dispatcher-num-sms", str(flex_num_sms)])
++
++
+ def conversion_worker_args(args: argparse.Namespace) -> list[str]:
+     """Serialize parsed conversion options for the in-job worker.
+ 
+@@ -426,4 +499,5 @@ def conversion_worker_args(args: argparse.Namespace) -> list[str]:
+         worker_args.extend(["--save-every-n-ranks", str(args.save_every_n_ranks)])
+         if args.export_weight_dtype is not None:
+             worker_args.extend(["--export-weight-dtype", args.export_weight_dtype])
++    _append_moe_overrides(args, worker_args)
+     return worker_args
+diff --git a/scripts/conversion/convert.sh b/scripts/conversion/convert.sh
+index 7d44ede..5a2926a 100755
+--- a/scripts/conversion/convert.sh
++++ b/scripts/conversion/convert.sh
+@@ -42,16 +42,13 @@ if [[ ${expect_executor_value} == true ]]; then
+     exit 2
+ fi
+ 
+-if [[ -n "${VIRTUAL_ENV:-}" ]]; then
+-    # Use NeMo Run from the pre-populated environment (for example, the CI container).
+-    UV_ARGS=(--no-project --active)
+-elif [[ ${executor} == slurm ]]; then
+-    # The Slurm head-node launcher only needs NeMo Run; model dependencies live
+-    # in the submitted container.
+-    UV_ARGS=(--no-project --with nemo-run==0.10.0)
+-else
+-    # Local execution runs the conversion worker in the project environment.
+-    UV_ARGS=(--with nemo-run==0.10.0)
++# HCU images ship no ``uv``, and every runtime dependency (torch, nemo-run, ...)
++# is already installed in the active interpreter, so launch the conversion driver
++# with that interpreter directly. Override the interpreter with PYTHON_BIN.
++PYTHON_BIN="${PYTHON_BIN:-python}"
++if ! command -v "${PYTHON_BIN}" >/dev/null 2>&1; then
++    echo "convert.sh: ${PYTHON_BIN} not found; set PYTHON_BIN to the container Python" >&2
++    exit 127
+ fi
+ 
+-exec uv run "${UV_ARGS[@]}" python "${SCRIPT_DIR}/setup_conversion.py" "$@"
++exec "${PYTHON_BIN}" "${SCRIPT_DIR}/setup_conversion.py" "$@"
+diff --git a/scripts/conversion/gpu_backend.py b/scripts/conversion/gpu_backend.py
+index 2fe612a..dd059f3 100644
+--- a/scripts/conversion/gpu_backend.py
++++ b/scripts/conversion/gpu_backend.py
+@@ -257,6 +257,7 @@ def import_checkpoint(
+     distributed_timeout_minutes: int | None,
+     overwrite: bool,
+     text_only: bool = False,
++    moe_overrides: dict[str, object] | None = None,
+ ) -> None:
+     """Import a Hugging Face model into a distributed Megatron checkpoint.
+ 
+@@ -292,7 +293,9 @@ def import_checkpoint(
+     )
+     if _uses_model_builder(bridge):
+         model_config = bridge.get_model_config()
+-        _configure_model_config(model_config, tp=tp, pp=pp, ep=ep, etp=etp, dtype=dtype)
++        _configure_model_config(
++            model_config, tp=tp, pp=pp, ep=ep, etp=etp, dtype=dtype, moe_overrides=moe_overrides
++        )
+         _maybe_generate_pipeline_layout(bridge, model_config, pp)
+         megatron_model = bridge.get_model(
+             model_config,
+@@ -301,7 +304,9 @@ def import_checkpoint(
+         )
+     else:
+         model_provider = bridge.to_megatron_provider(load_weights=True)
+-        _configure_model_provider(model_provider, tp=tp, pp=pp, ep=ep, etp=etp, dtype=dtype)
++        _configure_model_provider(
++            model_provider, tp=tp, pp=pp, ep=ep, etp=etp, dtype=dtype, moe_overrides=moe_overrides
++        )
+         _maybe_generate_pipeline_layout(bridge, model_provider, pp)
+         model_provider.finalize()
+         model_provider.initialize_model_parallel(seed=0, create_gloo_process_groups=False)
+@@ -339,6 +344,7 @@ def export_checkpoint(
+     export_weight_dtype: str | None,
+     overwrite: bool,
+     use_cpu: bool = False,
++    moe_overrides: dict[str, object] | None = None,
+ ) -> None:
+     """Export a distributed Megatron checkpoint to Hugging Face format.
+ 
+@@ -399,7 +405,16 @@ def export_checkpoint(
+     bridge.hf_pretrained.config = checkpoint_config_bridge.hf_pretrained
+     if _uses_model_builder(bridge):
+         model_config = bridge.get_model_config()
+-        _configure_model_config(model_config, tp=tp, pp=pp, ep=ep, etp=etp, dtype=dtype, use_cpu=use_cpu)
++        _configure_model_config(
++            model_config,
++            tp=tp,
++            pp=pp,
++            ep=ep,
++            etp=etp,
++            dtype=dtype,
++            use_cpu=use_cpu,
++            moe_overrides=moe_overrides,
++        )
+         _maybe_restore_pipeline_layout(bridge, model_config, megatron_path, pp)
+         resolved_pipeline_layout = model_config.pipeline_model_parallel_layout
+         model_config.finalize()
+@@ -407,7 +422,16 @@ def export_checkpoint(
+         bridge._get_or_initialize_pg_collection(model_config.transformer)
+     else:
+         model_provider = bridge.to_megatron_provider(load_weights=False)
+-        _configure_model_provider(model_provider, tp=tp, pp=pp, ep=ep, etp=etp, dtype=dtype, use_cpu=use_cpu)
++        _configure_model_provider(
++            model_provider,
++            tp=tp,
++            pp=pp,
++            ep=ep,
++            etp=etp,
++            dtype=dtype,
++            use_cpu=use_cpu,
++            moe_overrides=moe_overrides,
++        )
+         _maybe_restore_pipeline_layout(bridge, model_provider, megatron_path, pp)
+         resolved_pipeline_layout = model_provider.pipeline_model_parallel_layout
+         model_provider.finalize()
+diff --git a/scripts/conversion/run_conversion.py b/scripts/conversion/run_conversion.py
+index 5262dd5..6ba5816 100755
+--- a/scripts/conversion/run_conversion.py
++++ b/scripts/conversion/run_conversion.py
+@@ -60,6 +60,11 @@ def _validate_args(args: argparse.Namespace) -> None:
+             raise ValueError("WORLD_SIZE must be divisible by ETP*EP*PP for distributed CPU conversion.")
+     if args.command == "import" and args.device == "cpu" and args.low_memory_save:
+         raise ValueError("--low-memory-save is only supported by the GPU backend.")
++    if args.device == "cpu" and any(
++        getattr(args, name, None) is not None
++        for name in ("moe_token_dispatcher_type", "moe_flex_dispatcher_backend", "moe_flex_dispatcher_num_sms")
++    ):
++        raise ValueError("MoE dispatcher overrides require --device gpu.")
+     if args.command == "export":
+         if args.save_every_n_ranks < 1:
+             raise ValueError("--save-every-n-ranks must be at least 1.")
+@@ -76,6 +81,25 @@ def _validate_args(args: argparse.Namespace) -> None:
+             raise ValueError("--export-weight-dtype requires distributed CPU export or the GPU backend.")
+ 
+ 
++def _moe_overrides(args: argparse.Namespace) -> dict[str, object]:
++    """Collect MoE dispatcher overrides from parsed CLI args.
++
++    Only fields the user actually set are returned; an empty dict means "leave
++    whatever the model bridge configured untouched".
++    """
++    overrides: dict[str, object] = {}
++    dispatcher_type = getattr(args, "moe_token_dispatcher_type", None)
++    flex_backend = getattr(args, "moe_flex_dispatcher_backend", None)
++    flex_num_sms = getattr(args, "moe_flex_dispatcher_num_sms", None)
++    if dispatcher_type:
++        overrides["moe_token_dispatcher_type"] = dispatcher_type
++    if flex_backend:
++        overrides["moe_flex_dispatcher_backend"] = flex_backend
++    if flex_num_sms is not None:
++        overrides["moe_flex_dispatcher_num_sms"] = flex_num_sms
++    return overrides
++
++
+ def _run_import(args: argparse.Namespace) -> None:
+     """Dispatch an import to the selected backend."""
+     if args.bagel_repo is not None:
+@@ -111,6 +135,7 @@ def _run_import(args: argparse.Namespace) -> None:
+         etp=args.etp,
+         low_memory_save=args.low_memory_save,
+         distributed_timeout_minutes=args.distributed_timeout_minutes,
++        moe_overrides=_moe_overrides(args),
+     )
+ 
+ 
+@@ -145,6 +170,7 @@ def _run_export(args: argparse.Namespace) -> None:
+         distributed_timeout_minutes=args.distributed_timeout_minutes,
+         export_weight_dtype=args.export_weight_dtype,
+         use_cpu=distributed_cpu,
++        moe_overrides=_moe_overrides(args),
+     )
+ 
+ 
+diff --git a/scripts/conversion/setup_conversion.py b/scripts/conversion/setup_conversion.py
+index d6e2301..b334a55 100755
+--- a/scripts/conversion/setup_conversion.py
++++ b/scripts/conversion/setup_conversion.py
+@@ -20,6 +20,7 @@ import argparse
+ import logging
+ import os
+ import shlex
++import subprocess
+ import sys
+ from pathlib import Path
+ 
+@@ -98,6 +99,27 @@ def _validate_args(args: argparse.Namespace) -> None:
+             raise ValueError("--additional-slurm-params is only supported by the Slurm executor.")
+         if args.mount:
+             raise ValueError("--mount is only supported by the Slurm executor; mount paths before local execution.")
++    elif args.executor == "manual":
++        if args.device != "gpu":
++            raise ValueError("Manual executor is for multi-node GPU launches; use --executor local --device cpu instead.")
++        if args.detach:
++            raise ValueError("--detach is only supported by the Slurm executor.")
++        if args.exclusive:
++            raise ValueError("--exclusive is only supported by the Slurm executor.")
++        if args.srun_args:
++            raise ValueError("--srun-arg is only supported by the Slurm executor.")
++        if args.additional_slurm_params:
++            raise ValueError("--additional-slurm-params is only supported by the Slurm executor.")
++        if args.mount:
++            raise ValueError("--mount is only supported by the Slurm executor.")
++        if args.node_rank < 0 or args.node_rank >= args.nodes:
++            raise ValueError(f"--node-rank must satisfy 0 <= rank < --nodes ({args.nodes}).")
++        if args.nodes > 1 and (not args.master_addr or args.master_addr == "127.0.0.1"):
++            raise ValueError(
++                "Multi-node manual execution requires --master-addr set to the master node's routable address."
++            )
++        if not 1 <= args.master_port <= 65535:
++            raise ValueError("--master-port must be between 1 and 65535.")
+     elif not args.account or not args.partition:
+         raise ValueError("Slurm execution requires --account and --partition.")
+     elif not args.container_image:
+@@ -265,10 +287,77 @@ def _raise_on_failed_tasks(experiment: run.Experiment) -> None:
+         raise RuntimeError(f"Conversion failed: {', '.join(unsuccessful)}")
+ 
+ 
++def _run_manual(args: argparse.Namespace) -> None:
++    """Run the worker directly under torchrun on this node (multi-node friendly).
++
++    Every participating node runs the same convert.sh invocation with the same
++    --nodes / --gpus-per-node / --master-addr / --master-port and varies only
++    --node-rank. NeMo Run is bypassed entirely, so this works in environments
++    without Slurm and without the NeMo Run + torchx worker orchestration.
++    """
++    worker_args = conversion_worker_args(args)
++    worker_script = str(LOCAL_REPO_ROOT / "scripts" / "conversion" / "run_conversion.py")
++
++    existing_pythonpath = os.environ.get("PYTHONPATH", "")
++    pythonpath = f"{LOCAL_REPO_ROOT}/src:{LOCAL_REPO_ROOT}/3rdparty/Megatron-LM"
++    if existing_pythonpath:
++        pythonpath = f"{pythonpath}:{existing_pythonpath}"
++
++    env = os.environ.copy()
++    env["PYTHONPATH"] = pythonpath
++    # Consistent with the local executor path so torchrun spawns workers using
++    # the same interpreter the launcher is running under.
++    env.setdefault("PYTHON_EXEC", sys.executable)
++
++    torchrun_cmd = [
++        "torchrun",
++        f"--nnodes={args.nodes}",
++        f"--nproc_per_node={args.gpus_per_node}",
++        f"--node_rank={args.node_rank}",
++        f"--master_addr={args.master_addr}",
++        f"--master_port={args.master_port}",
++        worker_script,
++        *worker_args,
++    ]
++
++    logger.info(
++        "Manual multi-node launch (node_rank=%d/%d) command: %s",
++        args.node_rank,
++        args.nodes,
++        shlex.join(torchrun_cmd),
++    )
++    if args.nodes > 1:
++        peer_hint = torchrun_cmd.copy()
++        rank_index = next(i for i, arg in enumerate(peer_hint) if arg.startswith("--node_rank="))
++        peer_hint[rank_index] = "--node_rank=<PEER_RANK>"
++        logger.info("Run this same command on every peer, varying only --node-rank: %s", shlex.join(peer_hint))
++
++    if args.submission_dry_run:
++        return
++
++    completed = subprocess.run(torchrun_cmd, env=env, check=False)
++    if completed.returncode != 0:
++        raise RuntimeError(f"torchrun exited with status {completed.returncode}")
++
++
+ def main(argv: list[str] | None = None) -> None:
+     """Parse conversion arguments and launch the selected NeMo Run experiment."""
+     args = build_parser(include_execution=True).parse_args(argv)
+     _validate_args(args)
++
++    if args.executor == "manual":
++        # Manual mode bypasses NeMo Run entirely and drives torchrun on this
++        # node. --env / --mount aren't meaningful here; the caller controls
++        # the shell environment on each node directly.
++        logger.info(
++            "Executor: manual; device: %s; nodes=%d node_rank=%d",
++            args.device,
++            args.nodes,
++            args.node_rank,
++        )
++        _run_manual(args)
++        return
++
+     env_names = _parse_env(args.env)
+     mounts = _parse_mounts(args.mount)
+     executor = _build_executor(args, env_names, mounts)
+diff --git a/scripts/conversion/utils.py b/scripts/conversion/utils.py
+index 438a157..8cb14fb 100644
+--- a/scripts/conversion/utils.py
++++ b/scripts/conversion/utils.py
+@@ -197,6 +197,17 @@ def _uses_model_builder(bridge: AutoBridge) -> bool:
+     return getattr(bridge._model_bridge, "USE_MODEL_CONFIG_FOR_CONVERSION", False)
+ 
+ 
++def _apply_moe_overrides(model_provider: "GPTModelProvider", moe_overrides: dict[str, object] | None) -> None:
++    """Override MoE dispatcher fields set by the model bridge, if provided."""
++    if not moe_overrides:
++        return
++    from megatron.bridge.utils.common_utils import print_rank_0
++
++    for key, value in moe_overrides.items():
++        setattr(model_provider, key, value)
++        print_rank_0(f"MoE override: {key} = {value}")
++
++
+ def _configure_model_provider(
+     model_provider: GPTModelProvider,
+     *,
+@@ -206,6 +217,7 @@ def _configure_model_provider(
+     etp: int,
+     dtype: torch.dtype,
+     use_cpu: bool = False,
++    moe_overrides: dict[str, object] | None = None,
+ ) -> None:
+     """Apply distributed parallelism and dtype settings to a model provider."""
+     model_provider.tensor_model_parallel_size = tp
+@@ -216,6 +228,7 @@ def _configure_model_provider(
+     model_provider.params_dtype = dtype
+     if use_cpu:
+         model_provider.use_cpu_initialization = True
++    _apply_moe_overrides(model_provider, moe_overrides)
+ 
+ 
+ def _configure_model_config(
+@@ -227,9 +240,19 @@ def _configure_model_config(
+     etp: int,
+     dtype: torch.dtype,
+     use_cpu: bool = False,
++    moe_overrides: dict[str, object] | None = None,
+ ) -> None:
+     """Apply distributed parallelism and dtype settings to a builder config."""
+-    _configure_model_provider(model_config.transformer, tp=tp, pp=pp, ep=ep, etp=etp, dtype=dtype, use_cpu=use_cpu)
++    _configure_model_provider(
++        model_config.transformer,
++        tp=tp,
++        pp=pp,
++        ep=ep,
++        etp=etp,
++        dtype=dtype,
++        use_cpu=use_cpu,
++        moe_overrides=moe_overrides,
++    )
+ 
+ 
+ def _maybe_generate_pipeline_layout(bridge: AutoBridge, model_provider: GPTModelProvider, pp: int) -> bool:

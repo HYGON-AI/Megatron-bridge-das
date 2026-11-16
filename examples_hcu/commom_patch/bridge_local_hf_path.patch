@@ -1,0 +1,27 @@
+diff --git a/src/megatron/bridge/models/conversion/auto_bridge.py b/src/megatron/bridge/models/conversion/auto_bridge.py
+index 04d12c20f..e1a301400 100644
+--- a/src/megatron/bridge/models/conversion/auto_bridge.py
++++ b/src/megatron/bridge/models/conversion/auto_bridge.py
+@@ -46,6 +46,7 @@ from safetensors.torch import save_file
+ from transformers.configuration_utils import PretrainedConfig
+ from typing_extensions import Unpack
+ 
++from megatron.bridge.common import print_only_rank0
+ from megatron.bridge.models.conversion import model_bridge
+ from megatron.bridge.models.conversion.model_bridge import (
+     HFWeightTuple,
+@@ -677,6 +678,14 @@ class AutoBridge(Generic[MegatronModelT]):
+             >>> bridge = AutoBridge.from_hf_pretrained("/path/to/model")
+         """
+ 
++        # HCU: load the checkpoint from a local mirror when LOCAL_HF_PATH is set.
++        # Recipes and CLIs keep naming the upstream checkpoint id, while cluster
++        # runs serve a local copy, so the caller's path is overridden here once.
++        local_hf_path = os.environ.get("LOCAL_HF_PATH")
++        if local_hf_path:
++            print_only_rank0(f"Loading the HuggingFace checkpoint from LOCAL_HF_PATH={local_hf_path}")
++            path = local_hf_path
++
+         # First load just the config to check architecture support
+         # Use thread-safe config loading to prevent race conditions
+         config_kwargs = dict(kwargs)

@@ -1,0 +1,122 @@
+diff --git a/scripts/training/run_recipe.py b/scripts/training/run_recipe.py
+index 2e9457f..7366690 100755
+--- a/scripts/training/run_recipe.py
++++ b/scripts/training/run_recipe.py
+@@ -123,6 +123,8 @@ from megatron.bridge.recipes.utils.dataset_utils import (  # noqa: E402
+     dataset_train_mode,
+ )
+ 
++from megatron.bridge.common import _register_model_dump_hook  # noqa: E402
++
+ 
+ if TYPE_CHECKING:
+     from megatron.bridge.training.config import ConfigContainer
+@@ -596,6 +598,8 @@ def main(argv: list[str] | None = None) -> None:
+     )
+     step_func_name = _resolve_step_for_mode(step_func_name, args.mode)
+     forward_step = load_forward_step(step_func_name, mode=step_mode)
++    _register_model_dump_hook(recipe)
++
+     run_config(
+         config=recipe,
+         mode=execution_mode,
+diff --git a/src/megatron/bridge/common.py b/src/megatron/bridge/common.py
+new file mode 100644
+index 0000000..c982ea9
+--- /dev/null
++++ b/src/megatron/bridge/common.py
+@@ -0,0 +1,94 @@
++# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
++# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
++#
++# Licensed under the Apache License, Version 2.0 (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy of the License at
++#
++#     http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++
++"""Helpers shared across Megatron Bridge modules."""
++
++import os
++
++
++def print_only_rank0(msg: str) -> None:
++    """Print a message only if the current process is rank 0.
++
++    Args:
++        msg (str): The message to print.
++    """
++    rank = int(
++        os.environ.get("RANK")
++        or os.environ.get("LOCAL_RANK")
++        or os.environ.get("OMPI_COMM_WORLD_RANK")
++        or "0"
++    )
++    if rank == 0:
++        print(msg, flush=True)
++
++
++# ============================ model dump (debug) ============================
++def _dump_model_structure(model, *, name="model", max_lines=400):
++    """Print a Megatron model structure. ``model`` may be one module or a PP stage list."""
++    wrappers = []
++    try:
++        from megatron.core.transformer.module import Float16Module
++
++        wrappers.append(Float16Module)
++    except Exception:
++        pass
++    for module_name, class_name in (
++        ("megatron.core.distributed", "DistributedDataParallel"),
++        ("torch.nn.parallel", "DistributedDataParallel"),
++    ):
++        try:
++            module = __import__(module_name, fromlist=[class_name])
++            wrappers.append(getattr(module, class_name))
++        except Exception:
++            pass
++
++    chunks = model if isinstance(model, (list, tuple)) else [model]
++    for index, chunk in enumerate(chunks):
++        module = chunk
++        while wrappers and isinstance(module, tuple(wrappers)):
++            module = module.module
++        text = repr(module)
++        lines = text.splitlines()
++        if len(lines) > max_lines:
++            body = "\n".join(lines[:max_lines]) + "\n... <truncated %d more lines>" % (
++                len(lines) - max_lines
++            )
++        else:
++            body = text
++        print_only_rank0("\n===== %s[%d] : %s =====\n%s" % (name, index, type(module).__name__, body))
++    return model
++
++
++def _register_model_dump_hook(cfg):
++    """Attach ``_dump_model_structure`` to the model config's pre-wrap hooks."""
++    model_cfg = getattr(cfg, "model", None)
++    if model_cfg is None:
++        print_only_rank0("[model-dump] WARNING: cfg.model is missing, skip model dump")
++        return
++    hooks = getattr(model_cfg, "pre_wrap_hooks", None)
++    if hooks is not None:
++        if _dump_model_structure not in hooks:
++            hooks.append(_dump_model_structure)
++        print_only_rank0("[model-dump] registered pre-wrap hook on %s" % type(model_cfg).__name__)
++        return
++    register = getattr(model_cfg, "register_pre_wrap_hook", None)
++    if callable(register):
++        register(_dump_model_structure)
++        print_only_rank0("[model-dump] registered pre-wrap hook via register_pre_wrap_hook")
++        return
++    print_only_rank0("[model-dump] WARNING: model config supports no pre-wrap hook, skip model dump")
++
++
++# ========================== end model dump (debug) ==========================
