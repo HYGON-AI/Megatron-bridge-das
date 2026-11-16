@@ -4,6 +4,7 @@
 | Hardware | Recipe | Precision and optimizer |
 |----------|--------|-------------------------|
 | BW1300, 16 GPUs | `glm53_flash_pretrain_16gpu_bw1300_bf16_test_config` | BF16 Adam |
+| BW1101, 32 GPUs | `glm53_flash_sft_32gpu_bw1101_bf16_test_config` | BF16 Adam |
 
 
 ## 1、环境准备
@@ -51,9 +52,9 @@ pip install -r examples_hcu/requirements.txt
 
 ## 2、数据处理
 
-### 2.1 数据集下载
+### 2.1 pretrain
 
-以wikitext数据集为例
+#### 数据集下载
 ```python
 cd /workspace
 modelscope download --dataset Salesforce/wikitext --local_dir ./wikitext
@@ -87,10 +88,33 @@ wikitext
     └── validation-00000-of-00001.parquet
 ```
 
-### 2.2 数据集处理
+#### 数据集处理
 ```python
 cd /workspace/Megatron-bridge-das
 python3 examples_hcu/data_preparation/prepare_wikitext103.py --parquet-dir /workspace/wikitext/wikitext-103-raw-v1/ --output-dir  /workspace/wikitext103 --tokenizer-model /workspace/GLM-5.3-Flash --workers 32
+```
+### 2.2 sft
+
+#### 数据集下载
+```python
+hf download allenai/tulu-3-sft-mixture --repo-type=dataset --local-dir=/workspace/tulu-3-sft-mixture
+```
+或
+[点击下载](https://huggingface.co/datasets/allenai/tulu-3-sft-mixture/tree/main)数据集。
+
+假设下载后文件目录如下
+
+```
+workspace
+├── data
+│   ├── train-00000-of-00006.parquet
+│   ├── train-00001-of-00006.parquet
+│   ├── train-00002-of-00006.parquet
+│   ├── train-00003-of-00006.parquet
+│   ├── train-00004-of-00006.parquet
+│   ├── train-00005-of-00006.parquet
+└── README.md
+
 ```
 
 ## 3、模型准备
@@ -135,6 +159,24 @@ export LOCAL_HF_PATH=${LOCAL_HF_PATH:-/path/to/GLM-5.3-Flash}
 
 RECIPE: SUPPORTED_RECIPES in train_glm53_flash_pretrain.sh
 MODE: dryrun or train # 配置dryrun时不需要再跟HOSTFILE和NODES参数
+HOSTFILE: path to hostfile
+NODES: The number of nodes you use
+
+```
+
+#### sft
+```shell
+docker exec -it "your container name" bash
+cd /workspace/Megatron-bridge-das/examples_hcu/glm53_flash
+
+PORT=${PORT:-12345} # Set the SSH port by running /usr/sbin/sshd -p <port> inside the Docker container on each node. For example: /usr/sbin/sshd -p 12345
+DATA_PATH=${DATA_PATH:-/path/to/tulu-3-sft-mixture}
+export LOCAL_HF_PATH=${LOCAL_HF_PATH:-/path/to/GLM-5.3-Flash}
+
+./train_glm53_flash_sft.sh <RECIPE> <MODE> [HOSTFILE] [NODES]
+
+RECIPE: SUPPORTED_RECIPES in train_glm53_flash_sft.sh
+MODE: dryrun or sft # 配置dryrun时不需要再跟HOSTFILE和NODES参数
 HOSTFILE: path to hostfile
 NODES: The number of nodes you use
 
