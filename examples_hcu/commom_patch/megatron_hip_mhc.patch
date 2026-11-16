@@ -1,0 +1,78 @@
+diff --git a/3rdparty/Megatron-LM/megatron/core/fusions/fused_mhc_kernels.py b/3rdparty/Megatron-LM/megatron/core/fusions/fused_mhc_kernels.py
+index a6de8bffc..d9cc32285 100644
+--- a/3rdparty/Megatron-LM/megatron/core/fusions/fused_mhc_kernels.py
++++ b/3rdparty/Megatron-LM/megatron/core/fusions/fused_mhc_kernels.py
+@@ -84,6 +84,23 @@ except ImportError:
+     pass
+ 
+ 
++# ---------------------------------------------------------------------------
++# Check HIP (fused_mhc) availability
++# ---------------------------------------------------------------------------
++_HIP_AVAILABLE = False
++try:
++    from fused_mhc import (
++        FusedSinkhorn as HipFusedSinkhorn,
++        FusedHAggregate as HipFusedHAggregate,
++        FusedHPostBDA as HipFusedHPostBDA,
++        FusedProjRmsComputeH as HipFusedProjRmsComputeH,
++    )
++
++    _HIP_AVAILABLE = True
++except ImportError:
++    pass
++
++
+ def is_cutile_available() -> bool:
+     """Return True if cuTile fused kernels are enabled."""
+     return _CUTILE_AVAILABLE and _cutile_supports_current_device()
+@@ -148,6 +165,11 @@ def is_triton_available() -> bool:
+     return _TRITON_AVAILABLE
+ 
+ 
++def is_hip_available() -> bool:
++    """Return True if the HIP fused mHC kernels are enabled."""
++    return _HIP_AVAILABLE
++
++
+ def _validate_mhc_backend(backend: MHCBackend) -> None:
+     """Validate an explicit mHC backend policy before dispatch."""
+     if backend not in _VALID_MHC_BACKENDS:
+@@ -2950,6 +2972,8 @@ def fused_sinkhorn(
+     """Project logits according to the configured backend policy."""
+     _validate_mhc_backend(backend)
+     triton_sinkhorn = _get_triton_sinkhorn(backend)
++    if is_hip_available():
++        return HipFusedSinkhorn.apply(input_logits, num_iterations, eps)
+     if triton_sinkhorn is not None:
+         return triton_sinkhorn(input_logits, num_iterations, eps)
+     if _backend_uses_cutile(backend):
+@@ -2960,6 +2984,8 @@ def fused_sinkhorn(
+ def fused_h_aggregate(x: Tensor, h_pre: Tensor, *, backend: MHCBackend = "auto") -> Tensor:
+     """Aggregate n streams into one according to the configured backend policy."""
+     _validate_mhc_backend(backend)
++    if is_hip_available():
++        return HipFusedHAggregate.apply(x, h_pre)
+     if _backend_uses_triton(backend) or _backend_uses_cutile(backend):
+         return FusedHAggregate.apply(x, h_pre, backend)
+     return native_h_aggregate(x, h_pre)
+@@ -2976,6 +3002,8 @@ def fused_h_post_bda(
+ ) -> Tensor:
+     """Compute H_res.T @ residual + H_post * (x + bias) using the backend policy."""
+     _validate_mhc_backend(backend)
++    if is_hip_available():
++        return HipFusedHPostBDA.apply(h_res, original_residual, h_post, x, bias)
+     if _backend_uses_triton(backend) or _backend_uses_cutile(backend):
+         return FusedHPostBDA.apply(h_res, original_residual, h_post, x, bias, backend)
+     return native_h_post_bda(h_res, original_residual, h_post, x, bias)
+@@ -2996,6 +3024,10 @@ def fused_proj_rms_compute_h(
+ ) -> Tuple[Tensor, Tensor, Tensor, Tensor]:
+     """Compute projection, RMS norm, and H outputs using the backend policy."""
+     _validate_mhc_backend(backend)
++    if is_hip_available():
++        return HipFusedProjRmsComputeH.apply(
++            x, weight, alpha_pre, alpha_post, alpha_res, bias, n, eps, compute_h_eps
++        )
+     if _backend_uses_cutile(backend):
+         return CutileProjRmsComputeH.apply(
+             x, weight, alpha_pre, alpha_post, alpha_res, bias, n, eps, compute_h_eps

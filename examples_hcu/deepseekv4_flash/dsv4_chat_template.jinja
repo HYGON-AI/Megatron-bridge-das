@@ -1,0 +1,45 @@
+{#- DeepSeek-V4 chat template for Megatron-Bridge SFT.
+
+    Reproduces the official contract in
+    src/megatron/bridge/models/deepseek/data/encoding_v4.py
+    (adapted from DeepSeek-V4's encoding/encoding_dsv4.py), which renders
+
+        <｜begin▁of▁sentence｜><｜User｜>{question}<｜Assistant｜><think>{reasoning}</think>{answer}<｜end▁of▁sentence｜>
+
+    Supported template kwargs:
+      add_bos                     (bool, default true)  - prepend <｜begin▁of▁sentence｜>
+      enable_thinking             (bool, default true)  - thinking mode vs chat mode
+      truncate_history_thinking   (bool, default true)  - drop reasoning from history turns
+
+    The assistant span is wrapped in {% generation %} so that
+    tokenizer.apply_chat_template(..., return_assistant_tokens_mask=True)
+    masks exactly the tokens this model should be trained on.
+-#}
+{%- set add_bos = add_bos|default(true) -%}
+{%- set enable_thinking = enable_thinking|default(true) -%}
+{%- set truncate_history_thinking = truncate_history_thinking|default(true) -%}
+{%- set ns = namespace(last_user=-1) -%}
+{%- for m in messages -%}
+{%- if m['role'] == 'user' or m['role'] == 'developer' -%}{%- set ns.last_user = loop.index0 -%}{%- endif -%}
+{%- endfor -%}
+{%- if add_bos -%}{{ '<｜begin▁of▁sentence｜>' }}{%- endif -%}
+{%- for message in messages -%}
+{%- set role = message['role'] -%}
+{%- if role == 'system' -%}
+{{ message['content'] }}
+{%- elif role == 'user' or role == 'developer' -%}
+{{ '<｜User｜>' }}{{ message['content'] }}
+{%- elif role == 'assistant' -%}
+{%- set thinking = '' -%}
+{%- if message['thinking'] is defined and message['thinking'] -%}{%- set thinking = message['thinking'] -%}
+{%- elif message['reasoning_content'] is defined and message['reasoning_content'] -%}{%- set thinking = message['reasoning_content'] -%}{%- endif -%}
+{%- set last_turn = loop.index0 > ns.last_user -%}
+{%- set keep_thinking = thinking and (not truncate_history_thinking or last_turn) -%}
+{{ '<｜Assistant｜>' }}{% generation %}{% if enable_thinking and (not truncate_history_thinking or last_turn) %}{{ '<think>' }}{% endif %}{% if keep_thinking %}{{ thinking }}{% endif %}{{ '</think>' }}{{ message['content'] }}{{ '<｜end▁of▁sentence｜>' }}{% endgeneration %}
+{%- elif role == 'latest_reminder' -%}
+{{ '<｜latest_reminder｜>' }}{{ message['content'] }}
+{%- endif -%}
+{%- endfor -%}
+{%- if messages[-1]['role'] == 'user' or messages[-1]['role'] == 'developer' -%}
+{{ '<｜Assistant｜>' }}{% if enable_thinking %}{{ '<think>' }}{% else %}{{ '</think>' }}{% endif %}
+{%- endif -%}
