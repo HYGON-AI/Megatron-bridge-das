@@ -1,6 +1,4 @@
 # Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
-# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
-# Modified by Hygon Information Technology Co., Ltd., 2026.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,61 +15,38 @@
 
 import argparse
 import os
+import sys
+from pathlib import Path
+
+
+COMMON_SCRIPT_DIR = Path(__file__).resolve().parents[1] / "common"
+if str(COMMON_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(COMMON_SCRIPT_DIR))
+
+from container_runtime import add_container_runtime_args  # noqa: E402
+from slurm_parameters import add_slurm_parameter_args  # noqa: E402
+from slurm_wait import MIN_POLL_INTERVAL, slurm_poll_interval  # noqa: E402
 
 
 DTYPE_CHOICES = ("bfloat16", "float16", "float32")
-
-MOE_TOKEN_DISPATCHER_CHOICES = ("allgather", "alltoall", "flex")
-MOE_FLEX_BACKEND_CHOICES = ("deepep", "deepepv2", "hybridep", "ncclep")
-
-
-def _add_moe_override_arguments(parser: argparse.ArgumentParser) -> None:
-    """Optional overrides for MoE token dispatcher settings (GPU backend only).
-
-    These override values that the model bridge writes onto the GPT model
-    provider (e.g. DeepSeek-V4 hard-codes ``flex + hybridep`` which requires
-    the HybridEP DeepEP fork). On CPU conversion the flags are ignored.
-    """
-    moe = parser.add_argument_group("MoE dispatcher overrides (GPU only)")
-    moe.add_argument(
-        "--moe-token-dispatcher-type",
-        choices=MOE_TOKEN_DISPATCHER_CHOICES,
-        default=None,
-        help=(
-            "Override the MoE token dispatcher (allgather / alltoall / flex). "
-            "Useful when the model bridge default requires an unavailable backend."
-        ),
-    )
-    moe.add_argument(
-        "--moe-flex-dispatcher-backend",
-        choices=MOE_FLEX_BACKEND_CHOICES,
-        default=None,
-        help=(
-            "When --moe-token-dispatcher-type=flex, choose the flex backend "
-            "(deepep / deepepv2 / hybridep / ncclep)."
-        ),
-    )
-    moe.add_argument(
-        "--moe-flex-dispatcher-num-sms",
-        type=int,
-        default=None,
-        help="Override moe_flex_dispatcher_num_sms (flex dispatcher only).",
-    )
 
 
 def _add_execution_arguments(parser: argparse.ArgumentParser, *, default_device: str = "cpu") -> None:
     """Add NeMo Run execution arguments to a conversion subcommand."""
     execution = parser.add_argument_group("Execution")
+    add_container_runtime_args(execution)
+    add_slurm_parameter_args(execution)
+    execution.add_argument(
+        "--poll-interval",
+        type=slurm_poll_interval,
+        default=MIN_POLL_INTERVAL,
+        help="Seconds between Slurm status checks when waiting (minimum/default: 60).",
+    )
     execution.add_argument(
         "--executor",
-        choices=("local", "slurm", "manual"),
+        choices=("local", "slurm"),
         default="local",
-        help=(
-            "NeMo Run executor (default: local). "
-            "'manual' skips NeMo Run and directly runs torchrun on this node; "
-            "use it for multi-node GPU conversion without Slurm (invoke the "
-            "same command on each node, varying only --node-rank)."
-        ),
+        help="NeMo Run executor (default: local).",
     )
     execution.add_argument(
         "--device",
@@ -85,13 +60,32 @@ def _add_execution_arguments(parser: argparse.ArgumentParser, *, default_device:
         "--gpus_per_node",
         type=int,
         dest="gpus_per_node",
-        help="GPUs per node; required for the GPU backend.",
+        help="GPUs per node; required for the GPU backend and optional as a CPU-backend runtime resource.",
+    )
+    execution.add_argument(
+        "--cpu-processes-per-node",
+        type=int,
+        default=1,
+        help=(
+            "CPU conversion processes per node (default: 1). Values above 1 enable distributed CPU import "
+            "and export and require model parallelism compatible with nodes*cpu-processes-per-node."
+        ),
+    )
+    execution.add_argument(
+        "--cpus-per-task",
+        type=int,
+        help="Slurm CPU cores per conversion process.",
     )
     execution.add_argument("--mem", default="0", help="Slurm memory request (default: 0, all node memory).")
     execution.add_argument("--account", default=os.environ.get("SLURM_ACCOUNT"), help="Slurm account.")
     execution.add_argument("--partition", default=os.environ.get("SLURM_PARTITION"), help="Slurm partition.")
     execution.add_argument("--time", default="04:00:00", help="Slurm time limit (default: 04:00:00).")
     execution.add_argument("--gres", help="Optional Slurm GRES value for GPU jobs.")
+    execution.add_argument(
+        "--exclusive",
+        action="store_true",
+        help="Request exclusive Slurm nodes; by default conversion jobs may share nodes.",
+    )
     execution.add_argument(
         "--no-gpu-resource-request",
         action="store_true",
@@ -135,23 +129,6 @@ def _add_execution_arguments(parser: argparse.ArgumentParser, *, default_device:
         action="store_true",
         help="Return after submitting a Slurm job instead of waiting for conversion to finish.",
     )
-    execution.add_argument(
-        "--node-rank",
-        type=int,
-        default=0,
-        help="Rank of this node in the multi-node group (manual executor only, default: 0).",
-    )
-    execution.add_argument(
-        "--master-addr",
-        default="127.0.0.1",
-        help="Rendezvous host for torchrun (manual executor, default: 127.0.0.1).",
-    )
-    execution.add_argument(
-        "--master-port",
-        type=int,
-        default=29500,
-        help="Rendezvous port for torchrun (manual executor, default: 29500).",
-    )
 
 
 def _add_parallelism_arguments(
@@ -160,7 +137,7 @@ def _add_parallelism_arguments(
     include_distributed_timeout: bool,
 ) -> None:
     """Add distributed model-parallel arguments."""
-    parallelism = parser.add_argument_group("Distributed GPU parallelism")
+    parallelism = parser.add_argument_group("Distributed parallelism")
     parallelism.add_argument(
         "-tp",
         "--tp",
@@ -215,6 +192,11 @@ def _add_common_conversion_arguments(parser: argparse.ArgumentParser, *, include
     conversion = parser.add_argument_group("Conversion")
     conversion.add_argument("--hf-model", required=True, help="Hugging Face model ID or local path.")
     conversion.add_argument(
+        "--text-only",
+        action="store_true",
+        help="Convert only the language component of a supported multimodal checkpoint.",
+    )
+    conversion.add_argument(
         "--hf-revision",
         help="Immutable Hugging Face Hub revision to resolve before conversion (for example, a commit SHA).",
     )
@@ -237,7 +219,6 @@ def _add_common_conversion_arguments(parser: argparse.ArgumentParser, *, include
     )
 
     _add_parallelism_arguments(parser, include_distributed_timeout=True)
-    _add_moe_override_arguments(parser)
 
 
 def _add_roundtrip_arguments(parser: argparse.ArgumentParser, *, include_execution: bool) -> None:
@@ -265,7 +246,6 @@ def _add_roundtrip_arguments(parser: argparse.ArgumentParser, *, include_executi
         help="Allow custom code from the Hugging Face model repository.",
     )
     _add_parallelism_arguments(parser, include_distributed_timeout=True)
-    _add_moe_override_arguments(parser)
 
 
 def build_parser(*, include_execution: bool) -> argparse.ArgumentParser:
@@ -285,22 +265,21 @@ def build_parser(*, include_execution: bool) -> argparse.ArgumentParser:
         epilog="""
 Examples:
   # Local CPU import
-  ./convert.sh import --executor local --device cpu \\
+  ./scripts/conversion/convert.sh import --executor local --device cpu \\
       --hf-model meta-llama/Llama-3.2-1B --megatron-path /workspace/llama-megatron
 
-  # Local GPU import with MoE dispatcher override (avoid HybridEP requirement)
-  ./convert.sh import --executor local --device gpu --gpus-per-node 4 \\
-      --hf-model deepseek-ai/DeepSeek-V4-Flash \\
-      --megatron-path /workspace/deepseek-v4-flash \\
-      --tp 1 --pp 1 --ep 4 --torch-dtype bfloat16 --trust-remote-code \\
-      --moe-token-dispatcher-type alltoall
-
   # Slurm distributed GPU export
-  ./convert.sh export --executor slurm --device gpu \\
+  ./scripts/conversion/convert.sh export --executor slurm --device gpu \\
       --nodes 1 --gpus-per-node 8 --account ACCOUNT --partition PARTITION \\
       --container-image IMAGE --mount /workspace --env HF_TOKEN \\
       --hf-model Qwen/Qwen3-30B-A3B --megatron-path /workspace/qwen/iter_0000000 \\
       --hf-path /workspace/qwen-hf --ep 8
+
+  # Local multi-GPU round-trip validation
+  ./scripts/conversion/convert.sh roundtrip --executor local --device gpu \\
+      --gpus-per-node 8 --hf-model Qwen/Qwen3-30B-A3B \\
+      --ep 8
+
 """,
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -311,6 +290,15 @@ Examples:
         allow_abbrev=False,
     )
     _add_common_conversion_arguments(import_parser, include_execution=include_execution)
+    import_parser.add_argument(
+        "--low-memory-save",
+        action="store_true",
+        help="Reduce peak GPU memory while saving large imported checkpoints at the cost of additional runtime.",
+    )
+    import_parser.add_argument(
+        "--bagel-repo",
+        help="Official ByteDance-Seed/Bagel source checkout to import BAGEL checkpoints.",
+    )
 
     export_parser = subparsers.add_parser(
         "export",
@@ -329,7 +317,10 @@ Examples:
         "--distributed-save",
         action=argparse.BooleanOptionalAction,
         default=None,
-        help="Let GPU ranks save assigned Hugging Face shards independently (default: enabled for GPU).",
+        help=(
+            "Let distributed ranks save assigned Hugging Face shards independently "
+            "(default: enabled for GPU and distributed CPU export)."
+        ),
     )
     export_parser.add_argument(
         "--save-every-n-ranks",
@@ -349,17 +340,8 @@ Examples:
         allow_abbrev=False,
     )
     _add_roundtrip_arguments(roundtrip_parser, include_execution=include_execution)
+
     return parser
-
-
-def _append_moe_overrides(args: argparse.Namespace, worker_args: list[str]) -> None:
-    """Serialize the optional MoE dispatcher overrides for the worker CLI."""
-    if getattr(args, "moe_token_dispatcher_type", None):
-        worker_args.extend(["--moe-token-dispatcher-type", args.moe_token_dispatcher_type])
-    if getattr(args, "moe_flex_dispatcher_backend", None):
-        worker_args.extend(["--moe-flex-dispatcher-backend", args.moe_flex_dispatcher_backend])
-    if getattr(args, "moe_flex_dispatcher_num_sms", None) is not None:
-        worker_args.extend(["--moe-flex-dispatcher-num-sms", str(args.moe_flex_dispatcher_num_sms)])
 
 
 def conversion_worker_args(args: argparse.Namespace) -> list[str]:
@@ -393,7 +375,6 @@ def conversion_worker_args(args: argparse.Namespace) -> list[str]:
             worker_args.append("--trust-remote-code")
         if args.distributed_timeout_minutes is not None:
             worker_args.extend(["--distributed-timeout-minutes", str(args.distributed_timeout_minutes)])
-        _append_moe_overrides(args, worker_args)
         return worker_args
 
     worker_args = [
@@ -421,17 +402,26 @@ def conversion_worker_args(args: argparse.Namespace) -> list[str]:
         worker_args.append("--trust-remote-code")
     if args.overwrite:
         worker_args.append("--overwrite")
+    if args.text_only:
+        worker_args.append("--text-only")
     if args.distributed_timeout_minutes is not None:
         worker_args.extend(["--distributed-timeout-minutes", str(args.distributed_timeout_minutes)])
-    _append_moe_overrides(args, worker_args)
 
-    if args.command == "export":
+    if args.command == "import":
+        if args.low_memory_save:
+            worker_args.append("--low-memory-save")
+        if args.bagel_repo is not None:
+            worker_args.extend(["--bagel-repo", args.bagel_repo])
+    elif args.command == "export":
         worker_args.extend(["--hf-path", args.hf_path])
         if args.no_progress:
             worker_args.append("--no-progress")
         if args.not_strict:
             worker_args.append("--not-strict")
-        distributed_save = args.distributed_save if args.distributed_save is not None else args.device == "gpu"
+        distributed_cpu = args.device == "cpu" and args.cpu_processes_per_node > 1
+        distributed_save = (
+            args.distributed_save if args.distributed_save is not None else (args.device == "gpu" or distributed_cpu)
+        )
         worker_args.append("--distributed-save" if distributed_save else "--no-distributed-save")
         worker_args.extend(["--save-every-n-ranks", str(args.save_every_n_ranks)])
         if args.export_weight_dtype is not None:

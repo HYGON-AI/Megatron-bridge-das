@@ -1,100 +1,184 @@
-# Gemma3-1b
+# Gemma 3
 
-## Supported
-| Hardware | Recipe | Precision and optimizer |
-|----------|--------|-------------------------|
-| BW1000, 8 GPUs | `gemma3_1b_pretrain_8gpu_bw1000_bf16_config` | BF16 Adam |
+[Google's Gemma 3](https://huggingface.co/collections/google/gemma-3-release) is a family of lightweight, state-of-the-art open models built on the same research and technology used to create Gemini models. The Gemma 3 architecture builds on the transformer decoder framework with enhancements including pre-normalization with RMSNorm, GeGLU activations, Rotary Positional Embeddings (RoPE), and hybrid attention patterns (sliding window and global attention).
 
-## 1、环境准备
+Gemma 3 models are designed for a wide range of text generation tasks and are available in multiple sizes to suit different computational budgets.
 
-### 1.1 [光源社区](https://developer.sourcefind.cn/servicelist)拉取HCU基础docker镜像
+Gemma family models are supported via the Bridge system with auto-detected configuration and weight mapping.
 
-### 1.2 创建容器
+## Available Models
 
-参考命令如下（请按需修改，正确挂载工作目录，修改正确镜像名称）：
+### Text-Only Models
+- **Gemma 3 1B** (`google/gemma-3-1b-it`): Compact 1B parameter model optimized for efficiency
+  - 26 layers, 1152 hidden size
+  - 8 attention heads, 2 query groups (GQA)
+  - Sequence length: 131,072 tokens
+  - Ideal for single-GPU deployment
 
-```shell
-docker run -it \
-       --name megatron-bridge_test \
-       --shm-size=64G \
-       --device=/dev/kfd \
-       --device=/dev/mkfd \
-       --device=/dev/dri \
-       --cap-add=SYS_PTRACE \
-       --security-opt seccomp=unconfined \
-       --ulimit memlock=-1:-1 \
-       --ipc=host \
-       --network=host \
-       --workdir=/workspace \
-       --privileged \
-       -v /opt/hyhal:/opt/hyhal:ro \
-       -v /home:/home \
-       REPOSITORY:TAG \
-       /bin/bash
+All models support a sequence length of 131,072 tokens and use hybrid attention patterns (sliding window + global).
+
+## Model Architecture Features
+
+Gemma 3 introduces several architectural innovations:
+
+- **Hybrid Attention Pattern**: Alternates between global and local sliding window attention for efficient long-context processing
+- **GeGLU Activation**: Uses gated linear units with GELU activation for improved performance
+- **RMSNorm**: Layer normalization without mean centering for faster computation
+- **Rotary Embeddings**: Separate RoPE configurations for local and global attention layers
+  - Local attention: Uses sliding window with rotary base 10,000
+  - Global attention: Extended rotary base for better long-range dependencies
+
+## Conversion with 🤗 Hugging Face
+
+### Load HF → Megatron
+```python
+from megatron.bridge import AutoBridge
+
+# Example: Gemma 3 1B
+bridge = AutoBridge.from_hf_pretrained("google/gemma-3-1b-it")
+provider = bridge.to_megatron_provider()
+
+# Configure parallelism before instantiating the model
+provider.tensor_model_parallel_size = 1
+provider.pipeline_model_parallel_size = 1
+
+provider.finalize()
+model = provider.provide_distributed_model(wrap_with_ddp=False)
 ```
 
-### 1.3 拉取代码仓
-
-```shell
-cd /workspace
-
-git clone --recurse-submodules https://github.com/HYGON-AI/Megatron-bridge-das.git
+### Import HF → Megatron
+To import the HF model to your desired Megatron path:
+```bash
+./scripts/conversion/convert.sh import \
+--hf-model google/gemma-3-1b-it \
+--megatron-path /models/gemma-3-1b-it
 ```
 
-### 1.4 安装依赖
-
-```shell
-cd /workspace/Megatron-bridge-das
-pip install -r requirements.txt
+### Export Megatron → HF
+```bash
+./scripts/conversion/convert.sh export \
+--hf-model google/gemma-3-1b-it \
+--megatron-path /results/gemma3_1b/checkpoints/iter_00001000 \
+--hf-path ./gemma3-hf-export
 ```
 
-## 2、数据处理
+### Run Inference on Converted Checkpoint
 
-pretrain使用mock的数据集，无需处理
-
-## 3、模型准备
-
-```shell
-pip install modelscope
-
-cd /workspace
-
-modelscope download --model LLM-Research/gemma-3-1b-it --local_dir ./gemma-3-1b-it
+```bash
+uv run python examples/conversion/hf_to_megatron_generate_text.py \
+--hf_model_path google/gemma-3-1b-it \
+--megatron_model_path /models/gemma-3-1b-it \
+--prompt "What is artificial intelligence?" \
+--max_new_tokens 100
 ```
 
-或者[点击链接](https://www.modelscope.cn/models/LLM-Research/gemma-3-1b-it/files)，手动下载模型文件，上传至`/workspace`路径下。
+Note:
+- `--megatron_model_path` is optional. If not specified, the script will convert the model and then run forward.
 
-## 4、启动任务
+## Recipes
 
-### 4.1 参数填写
+See: [bridge.recipes.gemma](../../apidocs/bridge/bridge.recipes.gemma.md)
 
-（1）配置hostfile文件
+### Available Recipes
 
-进入`/workspace/Megatron-bridge-das/examples/gemma`，填写`hostfile`文件，示例如下（多个节点填写多行）
+- **Pretrain recipes**:
+  - `gemma3_1b_pretrain_config`: Pre-training for Gemma 3 1B
 
-```shell
-127.0.0.1
-127.0.0.2
+- **SFT recipes**:
+  - `gemma3_1b_sft_config`: Full SFT for Gemma 3 1B
+
+- **PEFT recipes** (LoRA, DoRA):
+  - `gemma3_1b_peft_config`: PEFT for Gemma 3 1B
+
+**Before training**, ensure these environment variables are set:
+- `SAVE_DIR`: checkpoint and log saving directory
+- `HF_TOKEN`: to download models from HF Hub (if required)
+- `HF_HOME`: (optional) to avoid re-downloading models and datasets
+- `WANDB_API_KEY`: (optional) to enable WandB logging
+
+### Parallelism Configurations
+
+| Model | Mode | TP | PP | Total GPUs | Use Case |
+|-------|------|----|----|------------|----------|
+| **Gemma 3 1B** | Pretrain | 1 | 1 | 8 | Pre-training (single node) |
+| **Gemma 3 1B** | Full SFT | 1 | 1 | 8 | Full supervised finetuning |
+| **Gemma 3 1B** | LoRA/DoRA | 1 | 1 | 8 | PEFT finetuning (single node) |
+
+### Pre-training Example
+
+```python
+from megatron.bridge.recipes.gemma import gemma3_1b_pretrain_config
+
+config = gemma3_1b_pretrain_config()
+config.dataset.blend = [["path/to/data"], None]
+config.train.train_iters = 100000
+config.train.global_batch_size = 256
+# Uses TP=1, PP=1; additional GPUs become data parallel
 ```
 
-可以填写节点ip或者节点主机名。
+### Finetuning Examples
 
-（2）根据任务填写脚本变量并执行
+#### Full Finetuning
 
-#### pretrain
-```shell
-docker exec -it "your container name" bash
-cd /workspace/Megatron-bridge-das/examples/gemma
+```python
+from megatron.bridge.recipes.gemma import gemma3_1b_sft_config
 
-# train_gemma3_pretrain.sh
-PORT=${PORT:-12345} # Set the SSH port by running /usr/sbin/sshd -p <port> inside the Docker container on each node. For example: /usr/sbin/sshd -p 12345
-export LOCAL_HF_PATH=${LOCAL_HF_PATH:-/path/to/gemma-3-1b-it}
-
-./train_gemma3_pretrain.sh <RECIPE> <MODE> [HOSTFILE] [NODES]
-
-RECIPE: SUPPORTED_RECIPES in train_gemma3_pretrain.sh
-MODE: dryrun or train # 配置dryrun时不需要再跟HOSTFILE和NODES参数
-HOSTFILE: path to hostfile
-NODES: The number of nodes you use
-
+config = gemma3_1b_sft_config()
+config.checkpoint.pretrained_checkpoint = "/models/gemma-3-1b-it"
+config.train.train_iters = 1000
+config.train.global_batch_size = 64
+config.scheduler.lr_decay_iters = 1000
+config.optimizer.lr = 5e-6
+# Uses TP=1, PP=1; additional GPUs become data parallel
 ```
+
+#### LoRA Finetuning
+
+```python
+from megatron.bridge.recipes.gemma import gemma3_1b_peft_config
+
+config = gemma3_1b_peft_config(peft_scheme="lora")  # or "dora"
+config.checkpoint.pretrained_checkpoint = "/models/gemma-3-1b-it"
+config.train.train_iters = 1000
+config.train.global_batch_size = 128
+config.scheduler.lr_decay_iters = 1000
+config.optimizer.lr = 1e-4
+# Uses TP=1, PP=1; additional GPUs become data parallel
+```
+
+### Command-Line Training
+
+**Full Finetuning:**
+```bash
+uv run python -m torch.distributed.run --nproc-per-node=8 scripts/training/run_recipe.py \
+  --recipe gemma3_1b_sft_config \
+  --mode sft \
+  checkpoint.pretrained_checkpoint=/models/gemma-3-1b-it \
+  train.global_batch_size=64 \
+  train.train_iters=1000 \
+  checkpoint.save=$SAVE_DIR/gemma3_1b_finetune
+```
+
+**LoRA Finetuning:**
+```bash
+uv run python -m torch.distributed.run --nproc-per-node=8 scripts/training/run_recipe.py \
+  --recipe gemma3_1b_peft_config \
+  --mode lora \
+  checkpoint.pretrained_checkpoint=/models/gemma-3-1b-it \
+  train.global_batch_size=128 \
+  checkpoint.save=$SAVE_DIR/gemma3_1b_lora
+```
+
+## Examples
+- Checkpoint import/export: [scripts/conversion/convert.sh](https://github.com/NVIDIA-NeMo/Megatron-Bridge/blob/main/scripts/conversion/convert.sh)
+- Generate text (HF→Megatron): [examples/conversion/hf_to_megatron_generate_text.py](https://github.com/NVIDIA-NeMo/Megatron-Bridge/blob/main/examples/conversion/hf_to_megatron_generate_text.py)
+
+## Hugging Face Model Cards
+
+- Gemma 3 1B: https://huggingface.co/google/gemma-3-1b-it
+
+## Related Docs
+- Gemma3 Vision-Language Models: [Gemma 3 VL](https://github.com/NVIDIA-NeMo/Megatron-Bridge/blob/main/examples/models/gemma/gemma3_vl/README.md)
+- Recipe usage: [Recipe usage](../../recipe-usage.md)
+- Customizing the training recipe configuration: [Configuration overview](../../training/config-container-overview.md)
+- Training entry points: [Entry points](../../training/entry-points.md)

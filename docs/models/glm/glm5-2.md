@@ -1,154 +1,462 @@
 # GLM-5.2
 
-## Supported
-| Hardware | Recipe | Precision and optimizer |
-|----------|--------|-------------------------|
-| BW1300, 32 GPUs | `glm52_pretrain_32gpu_bw1000_bf16_test_config` | BF16 Adam |
-| BW1300, 32 GPUs | `glm52_sft_32gpu_bw1000_bf16_test_config` | BF16 Adam |
+[GLM-5](https://huggingface.co/zai-org/GLM-5), [GLM-5.1](https://huggingface.co/zai-org/GLM-5.1), [GLM-5.2](https://huggingface.co/zai-org/GLM-5.2), and [GLM-5.3](https://huggingface.co/zai-org/GLM-5.3) use the shared `GLM5Bridge` for their MoE, Multi-Latent Attention, and Dynamic Sparse Attention architecture. GLM-5.3 shares GLM-5.2's architecture and import mappings; full-model GLM-5.3 verification remains pending.
 
 
-## 1、环境准备
+## GLM-5.2 / GLM-5.3 compatibility
 
-### 1.1 [光源社区](https://developer.sourcefind.cn/servicelist)拉取HCU基础docker镜像
+The pinned publisher configs for [GLM-5.2](https://huggingface.co/zai-org/GLM-5.2/blob/cf457fa734ab149ffef225f80893eb38c6ff5cdc/config.json) and [GLM-5.3](https://huggingface.co/zai-org/GLM-5.3/blob/aca966e4e02791568aa6a4ced368624b3d897f42/config.json) have identical architecture fields: 78 decoder layers, 256 routed experts with top-8 routing, MLA, and the same DSA IndexShare pattern. All 59,585 base checkpoint tensor names and shapes also match. AutoBridge resolves both to `GlmMoeDsaForCausalLM` and `GLM5Bridge`; no separate provider is needed. **GLM-5.3-Flash is a different architecture and is outside this support statement.**
 
-### 1.2 创建容器
+The checkpoints have important differences:
 
-参考命令如下（请按需修改，正确挂载工作目录，修改正确镜像名称）：
+- **Precision:** GLM-5.2 stores BF16 weights (plus FP32 router biases). GLM-5.3 stores 59,044 weights as E4M3 FP8 with FP32 scales per 128×128 block. The existing GLM bridge dequantizes these weights to BF16 on import. This is distinct from enabling FP8 training.
+- **Config metadata:** GLM-5.3 adds `quantization_config` and records Transformers 5.15.0 instead of 5.12.0. Use the repository's supported dependency versions.
+- **Tokenizer and generation defaults:** `tokenizer.json`, `tokenizer_config.json`, and `generation_config.json` are identical at those revisions, including token IDs and sampling defaults.
+- **Chat formatting:** GLM-5.3's template adds low reasoning effort, retains historical reasoning by default, always opens a thinking response (it does not honor `enable_thinking=False`), and changes structured tool-result handling and ordering. Load the template from the GLM-5.3 checkpoint; do not substitute GLM-5.2's template.
 
-```shell
-docker run -it \
-       --name megatron-bridge_test \
-       --shm-size=64G \
-       --device=/dev/kfd \
-       --device=/dev/mkfd \
-       --device=/dev/dri \
-       --cap-add=SYS_PTRACE \
-       --security-opt seccomp=unconfined \
-       --ulimit memlock=-1:-1 \
-       --ipc=host \
-       --network=host \
-       --workdir=/workspace \
-       --privileged \
-       -v /opt/hyhal:/opt/hyhal:ro \
-       -v /home:/home \
-       REPOSITORY:TAG \
-       /bin/bash
-```
+For config loading without weights:
 
-### 1.3 拉取代码仓
-
-```shell
-cd /workspace
-
-git clone --recurse-submodules https://github.com/HYGON-AI/Megatron-bridge-das.git
-```
-
-### 1.4 安装依赖
-
-```shell
-cd /workspace/Megatron-bridge-das
-pip install -r requirements.txt
-```
-
-## 2、数据处理(pretrain不需要)
-
-### 2.1 数据集下载
-
-以tulu-3-sft-mixture数据集为例
 ```python
-hf download allenai/tulu-3-sft-mixture --repo-type=dataset --local-dir=/workspace/tulu-3-sft-mixture
-```
-或
-[点击下载](https://huggingface.co/datasets/allenai/tulu-3-sft-mixture/tree/main)数据集。
+from megatron.bridge import AutoBridge
 
-假设下载后文件目录如下
-
-```
-workspace
-├── data
-│   ├── train-00000-of-00006.parquet
-│   ├── train-00001-of-00006.parquet
-│   ├── train-00002-of-00006.parquet
-│   ├── train-00003-of-00006.parquet
-│   ├── train-00004-of-00006.parquet
-│   ├── train-00005-of-00006.parquet
-└── README.md
-
+bridge = AutoBridge.from_hf_pretrained(
+    "zai-org/GLM-5.3", revision="aca966e4e02791568aa6a4ced368624b3d897f42"  # pragma: allowlist secret (public HF revision)
+)
+model_config = bridge.get_model_config()
 ```
 
-### 2.2 数据集处理
+For **BF16 export** using the FP8 source as the reference, explicitly select `--export-weight-dtype bfloat16` with the GPU or distributed-CPU conversion backend (API: `weight_dtype=torch.bfloat16`). This removes FP8 scale tensors from strict source-key validation and writes a BF16 artifact rather than claiming a bitwise FP8 round trip. The serial-CPU backend does not support this option. MTP is disabled by default; the appended MTP layer is outside that default inference graph.
 
-执行如下命令
+### Verification limits
 
-```shell
-cd /workspace/Megatron-bridge-das/data_preparation
-MEGATRON_PATH=/workspace/Megatron-bridge-das
-export PYTHONPATH=${MEGATRON_PATH}/hcu_megatron_bridge/src:${MEGATRON_PATH}/3rdparty/Megatron-Bridge/src:${MEGATRON_PATH}/3rdparty/Megatron-Bridge/3rdparty/Megatron-LM:${PYTHONPATH}
-python convert_tulu3_sft_mixture_to_jsonl.py --src /workspace/tulu-3-sft-mixture/data --dst /workspace/tulu-3-sft-mixture/data
-```
+The recorded commands and results below belong to the checkpoint named in each verification card. GLM-5.2 results do **not** establish GLM-5.3 full-checkpoint conversion/export, forward parity, generation, SFT/PEFT, resume, long-context behavior, or performance. Those GLM-5.3 checks remain unverified. The `glm52_*` recipes are pinned to GLM-5.2 and retain that name and attribution; changing only their display name would not select GLM-5.3 weights or its chat template.
 
-## 3、模型准备
+[Production qualification tracker #5476](https://github.com/NVIDIA-NeMo/Megatron-Bridge/issues/5476) remains open. It includes repeated-MTP training semantics, precision controls, dynamic context parallelism, production recipes, checkpoint continuity, convergence, and hardware-specific performance qualification. See also the open [export context-length fix #5996](https://github.com/NVIDIA-NeMo/Megatron-Bridge/pull/5996), [router-bias fix #6036](https://github.com/NVIDIA-NeMo/Megatron-Bridge/pull/6036), and [recipe-selection fix #5608](https://github.com/NVIDIA-NeMo/Megatron-Bridge/pull/5608).
 
-```shell
-pip install modelscope
+## HybridModel migration
 
-cd /workspace
+The shared GLM-5/5.1/5.2/5.3 bridge constructs `HybridModel` through
+`GLM5ModelConfig` and `GLM5ModelBuilder`. The outer language model is Core's native `HybridModel`;
+GLM-specific runtime adaptations are supplied through the stack specification.
+Each HF block becomes a `D-` (dense) or `DE` (MoE) pair;
+78 HF blocks therefore become 156 physical Hybrid layers. A thin `GLMDSAttention`
+subclass reads the per-forward index-sharing state from a context variable owned by
+the GLM stage; the stack translates the HF index-sharing cadence into physical layer
+coordinates on private per-layer config copies. HF export retains the
+original layer count, and MTP uses a separate `/DE` pattern when enabled.
 
-modelscope download --model ZhipuAI/GLM-5.2 --local_dir ./GLM-5.2
-```
+Import the pinned HF checkpoint into a **new** Hybrid checkpoint directory.
+The generic Core GPT-to-Hybrid converter does not support this DSA architecture;
+old GPT optimizer/checkpoint resume is outside this migration. Recipes and checkpoint
+conversion build the model from `get_model_config()`; the deprecated `to_megatron_provider()`
+returns the equivalent `GLM5ModelProvider`.
 
-或者[点击链接](https://modelscope.cn/models/ZhipuAI/GLM-5.2/files)，手动下载模型文件，上传至`/workspace`路径下。
+The initial recipes use BF16 and non-VPP pipeline segments. Pattern boundaries
+must begin on DSA compute layers. Full recomputation replays an entire pipeline
+stage to preserve forward-local top-k sharing, so memory and throughput must be
+remeasured. Selective `core_attn` recomputation is rejected because its backward
+replay does not preserve the forward-local DSA sharing state. Verified Hybrid
+conversion, forward correlation, inference, and GB200 training/resume results,
+including MTP and packed CP, are recorded below. Historical GPT results do not
+verify Hybrid.
 
-## 4、启动任务
+<!-- BEGIN GENERATED VERIFIED CONFIGURATIONS -->
 
-### 4.1 参数填写
+## Verified configurations
 
-（1）配置hostfile文件
+Choose an exact recorded configuration to see its command and expected result. These selectors are generated from the authoritative verification cards and never synthesize combinations.
 
-进入`/workspace/Megatron-bridge-das/examples/glm`，填写`hostfile`文件，示例如下（多个节点填写多行）
+<a id="verified-glm5-2"></a>
+### Run a configuration
 
-```shell
-127.0.0.1
-127.0.0.2
-```
+Choose a workflow, precision, and exact recorded combination. The command and expected result update below.
 
-可以填写节点ip或者节点主机名。
+<div class="verification-model-explorer" data-model-explorer>
+  <div class="verification-model-controls" hidden>
+    <div class="verification-capability-tabs" role="tablist" aria-label="Workflow">
+      <button type="button" role="tab" aria-selected="true" data-capability-tab="import-export">Import & Export</button>
+      <button type="button" role="tab" aria-selected="false" data-capability-tab="pretrain">Pretrain</button>
+      <button type="button" role="tab" aria-selected="false" data-capability-tab="benchmark" disabled>Benchmark</button>
+      <button type="button" role="tab" aria-selected="false" data-capability-tab="sft">SFT</button>
+      <button type="button" role="tab" aria-selected="false" data-capability-tab="lora">LoRA</button>
+      <button type="button" role="tab" aria-selected="false" data-capability-tab="long-context">Long Context</button>
+    </div>
+    <div class="verification-filter-row">
+      <div class="verification-precision-controls" aria-label="Precision filter">
+        <span>Precision</span>
+        <button type="button" class="is-active" data-precision="">All</button>
+        <button type="button" data-precision="bf16">BF16</button>
+        <button type="button" data-precision="fp8_mx">FP8 MX</button>
+        <button type="button" data-precision="nvfp4">NVFP4</button>
+      </div>
+      <div class="verification-hardware-controls" aria-label="GPU filter">
+        <span>GPU</span>
+        <button type="button" class="is-active" data-hardware="">All</button>
+        <button type="button" data-hardware="GB200">GB200</button>
+      </div>
+      <span class="verification-combination-count" aria-live="polite"></span>
+    </div>
+  </div>
+  <div class="verification-combination-list" hidden>
+    <button type="button" class="verification-combination" data-capability="import-export" data-precision="bf16" data-hardware="" data-status="verified" data-entry="glm5-2-hf-to-megatron-cpu" aria-controls="glm5-2-hf-to-megatron-cpu" aria-pressed="false">
+      <span class="verification-combination-heading">
+        <strong>Import · CPU</strong>
+        <span class="verification-status verification-status--verified" title="Verified">✓ Verified</span>
+      </span>
+      <span class="verification-combination-meta">BF16</span>
+    </button>
+    <button type="button" class="verification-combination" data-capability="import-export" data-precision="bf16" data-hardware="" data-status="verified" data-entry="glm5-2-hf-to-megatron-gpu" aria-controls="glm5-2-hf-to-megatron-gpu" aria-pressed="false">
+      <span class="verification-combination-heading">
+        <strong>Import · GPU</strong>
+        <span class="verification-status verification-status--verified" title="Verified">✓ Verified</span>
+      </span>
+      <span class="verification-combination-meta">BF16</span>
+    </button>
+    <button type="button" class="verification-combination" data-capability="import-export" data-precision="bf16" data-hardware="" data-status="verified" data-entry="glm5-2-megatron-to-hf-cpu" aria-controls="glm5-2-megatron-to-hf-cpu" aria-pressed="false">
+      <span class="verification-combination-heading">
+        <strong>Export · CPU</strong>
+        <span class="verification-status verification-status--verified" title="Verified">✓ Verified</span>
+      </span>
+      <span class="verification-combination-meta">BF16</span>
+    </button>
+    <button type="button" class="verification-combination" data-capability="import-export" data-precision="bf16" data-hardware="" data-status="verified" data-entry="glm5-2-megatron-to-hf-gpu" aria-controls="glm5-2-megatron-to-hf-gpu" aria-pressed="false">
+      <span class="verification-combination-heading">
+        <strong>Export · GPU</strong>
+        <span class="verification-status verification-status--verified" title="Verified">✓ Verified</span>
+      </span>
+      <span class="verification-combination-meta">BF16</span>
+    </button>
+    <button type="button" class="verification-combination" data-capability="pretrain" data-precision="bf16" data-hardware="GB200" data-status="verified" data-entry="glm5-2-pretrain-gb200" aria-controls="glm5-2-pretrain-gb200" aria-pressed="false">
+      <span class="verification-combination-heading">
+        <strong>Pretrain · GB200</strong>
+        <span class="verification-status verification-status--verified" title="Verified">✓ Verified</span>
+      </span>
+      <span class="verification-combination-meta">BF16</span>
+    </button>
+    <button type="button" class="verification-combination" data-capability="sft" data-precision="bf16" data-hardware="GB200" data-status="verified" data-entry="glm5-2-sft-gb200" aria-controls="glm5-2-sft-gb200" aria-pressed="false">
+      <span class="verification-combination-heading">
+        <strong>SFT · GB200</strong>
+        <span class="verification-status verification-status--verified" title="Verified">✓ Verified</span>
+      </span>
+      <span class="verification-combination-meta">BF16</span>
+    </button>
+    <button type="button" class="verification-combination" data-capability="long-context" data-precision="bf16" data-hardware="GB200" data-status="verified" data-entry="glm5-2-sft-long-context-gb200" aria-controls="glm5-2-sft-long-context-gb200" aria-pressed="false">
+      <span class="verification-combination-heading">
+        <strong>Long Context · GB200</strong>
+        <span class="verification-status verification-status--verified" title="Verified">✓ Verified</span>
+      </span>
+      <span class="verification-combination-meta">BF16</span>
+    </button>
+    <button type="button" class="verification-combination" data-capability="lora" data-precision="bf16" data-hardware="GB200" data-status="verified" data-entry="glm5-2-peft-gb200" aria-controls="glm5-2-peft-gb200" aria-pressed="false">
+      <span class="verification-combination-heading">
+        <strong>LoRA · GB200</strong>
+        <span class="verification-status verification-status--verified" title="Verified">✓ Verified</span>
+      </span>
+      <span class="verification-combination-meta">BF16</span>
+    </button>
+  </div>
+  <div class="verification-model-details">
+    <article id="glm5-2-hf-to-megatron-cpu" class="verification-model-detail" data-entry-detail="glm5-2-hf-to-megatron-cpu" tabindex="-1">
+      <header class="verification-model-detail-heading">
+        <h4>Import · CPU</h4>
+        <span class="verification-status verification-status--verified" title="Verified">✓ Verified</span>
+      </header>
+      <dl class="verification-model-detail-meta">
+        <div><dt>Hardware</dt><dd>not specified</dd></div>
+        <div><dt>Precision</dt><dd>BF16</dd></div>
+        <div><dt>Last verified</dt><dd>2026-09-22</dd></div>
+      </dl>
+      <section class="verification-command-section">
+        <h5>Exact command</h5>
+        <div class="verification-command">
+          <div class="verification-command-heading">
+            <span>Command</span>
+            <button type="button" class="verification-copy-command">Copy</button>
+          </div>
+          <pre><code class="language-bash">./scripts/conversion/convert.sh import --executor slurm --device cpu --nodes 4 --cpu-processes-per-node 8 --cpus-per-task 16 --mem 0 --exclusive --hf-model zai-org/GLM-5.2 --hf-revision 4d67f66cc64d3219133b767c253b2ad1425c6c88 --megatron-path work/model-verification/glm5-2/hybrid/cpu-megatron --torch-dtype bfloat16 --tp 1 --pp 2 --ep 8 --etp 2 --distributed-timeout-minutes 240</code></pre>
+        </div>
+      </section>
+      <section class="verification-expected-result">
+        <h5>Expected result</h5>
+        <p>Distributed CPU HF-to-Hybrid import with 32 Gloo processes on the host memory of 4 GB200 nodes maps all 5916 pinned source tensors through GLM5Bridge and saves a 1.4 TB torch_dist checkpoint (iter_0000000 with run_config.yaml) in about 14 minutes. The checkpoint is strictly reloadable, as exercised by a distributed CPU export of it whose 58794 tensors match the pinned source keys, shapes, dtypes and values exactly (the 791 tensors of the appended MTP layer, model.layers.78.*, are excluded because MTP is disabled by default). Weights stay on CPU, but Megatron-Core&#x27;s CUDA RNG tracker still requires a visible CUDA device on each node during model-parallel initialization, so the run cannot execute on GPU-less nodes. Attention, dense and shared-expert weights are replicated across the 16 expert ranks of each pipeline stage, so peak host memory reached about 930 GB of the 952 GB per node (up to 177 GB for a single process); a single-process CPU import would need more than 1.5 TB on one host.</p>
+      </section>
+    </article>
+    <article id="glm5-2-hf-to-megatron-gpu" class="verification-model-detail" data-entry-detail="glm5-2-hf-to-megatron-gpu" tabindex="-1">
+      <header class="verification-model-detail-heading">
+        <h4>Import · GPU</h4>
+        <span class="verification-status verification-status--verified" title="Verified">✓ Verified</span>
+      </header>
+      <dl class="verification-model-detail-meta">
+        <div><dt>Hardware</dt><dd>not specified</dd></div>
+        <div><dt>Precision</dt><dd>BF16</dd></div>
+        <div><dt>Last verified</dt><dd>2026-09-19</dd></div>
+      </dl>
+      <section class="verification-command-section">
+        <h5>Exact command</h5>
+        <div class="verification-command">
+          <div class="verification-command-heading">
+            <span>Command</span>
+            <button type="button" class="verification-copy-command">Copy</button>
+          </div>
+          <pre><code class="language-bash">./scripts/conversion/convert.sh import --executor slurm --device gpu --nodes 4 --gpus-per-node 4 --hf-model zai-org/GLM-5.2 --hf-revision 4d67f66cc64d3219133b767c253b2ad1425c6c88 --megatron-path work/model-verification/glm5-2/hybrid/gpu-megatron --torch-dtype bfloat16 --tp 1 --pp 2 --ep 8 --etp 1 --distributed-timeout-minutes 60 --low-memory-save</code></pre>
+        </div>
+      </section>
+      <section class="verification-expected-result">
+        <h5>Expected result</h5>
+        <p>Distributed HF-to-Hybrid import on 16 GB200 GPUs maps all 5916 pinned source tensors through GLM5Bridge (shared-indexer layers carry no indexer tensors) and saves a 1.4 TB distributed checkpoint (iter_0000000 with run_config.yaml) in about 12 minutes. The checkpoint is strictly reloadable, as exercised by the GPU export. The appended MTP layer stays disabled by default.</p>
+      </section>
+    </article>
+    <article id="glm5-2-megatron-to-hf-cpu" class="verification-model-detail" data-entry-detail="glm5-2-megatron-to-hf-cpu" tabindex="-1">
+      <header class="verification-model-detail-heading">
+        <h4>Export · CPU</h4>
+        <span class="verification-status verification-status--verified" title="Verified">✓ Verified</span>
+      </header>
+      <dl class="verification-model-detail-meta">
+        <div><dt>Hardware</dt><dd>not specified</dd></div>
+        <div><dt>Precision</dt><dd>BF16</dd></div>
+        <div><dt>Last verified</dt><dd>2026-09-19</dd></div>
+      </dl>
+      <section class="verification-command-section">
+        <h5>Exact command</h5>
+        <div class="verification-command">
+          <div class="verification-command-heading">
+            <span>Command</span>
+            <button type="button" class="verification-copy-command">Copy</button>
+          </div>
+          <pre><code class="language-bash">./scripts/conversion/convert.sh export --executor slurm --device cpu --nodes 4 --cpu-processes-per-node 8 --cpus-per-task 16 --mem 0 --exclusive --hf-model zai-org/GLM-5.2 --hf-revision 4d67f66cc64d3219133b767c253b2ad1425c6c88 --megatron-path work/model-verification/glm5-2/hybrid/gpu-megatron/iter_0000000 --hf-path work/model-verification/glm5-2/hybrid/cpu-hf-export --torch-dtype bfloat16 --tp 1 --pp 2 --ep 8 --etp 2 --distributed-timeout-minutes 240 --distributed-save --save-every-n-ranks 1 --no-progress</code></pre>
+        </div>
+      </section>
+      <section class="verification-expected-result">
+        <h5>Expected result</h5>
+        <p>Distributed CPU Hybrid-to-HF export with 32 Gloo processes on the host memory of 4 GB200 nodes strictly reloads the imported checkpoint and writes 279 safetensors shards plus model.safetensors.index.json in about 30 minutes. All 58794 exported tensors match the pinned source keys, shapes, dtypes and values exactly; the 791 tensors of the appended MTP layer (model.layers.78.*) are excluded because MTP is disabled by default, and shared-indexer layers carry no indexer tensors on either side. Weights stay on CPU, but Megatron-Core&#x27;s CUDA RNG tracker still requires a visible CUDA device on each node during model-parallel initialization, so the run cannot execute on GPU-less nodes. generation_config.json is preserved from the source because Transformers strict validation rejects re-saving it.</p>
+      </section>
+    </article>
+    <article id="glm5-2-megatron-to-hf-gpu" class="verification-model-detail" data-entry-detail="glm5-2-megatron-to-hf-gpu" tabindex="-1">
+      <header class="verification-model-detail-heading">
+        <h4>Export · GPU</h4>
+        <span class="verification-status verification-status--verified" title="Verified">✓ Verified</span>
+      </header>
+      <dl class="verification-model-detail-meta">
+        <div><dt>Hardware</dt><dd>not specified</dd></div>
+        <div><dt>Precision</dt><dd>BF16</dd></div>
+        <div><dt>Last verified</dt><dd>2026-09-19</dd></div>
+      </dl>
+      <section class="verification-command-section">
+        <h5>Exact command</h5>
+        <div class="verification-command">
+          <div class="verification-command-heading">
+            <span>Command</span>
+            <button type="button" class="verification-copy-command">Copy</button>
+          </div>
+          <pre><code class="language-bash">./scripts/conversion/convert.sh export --executor slurm --device gpu --nodes 4 --gpus-per-node 4 --hf-model zai-org/GLM-5.2 --hf-revision 4d67f66cc64d3219133b767c253b2ad1425c6c88 --megatron-path work/model-verification/glm5-2/hybrid/gpu-megatron/iter_0000000 --hf-path work/model-verification/glm5-2/hybrid/gpu-hf-export --torch-dtype bfloat16 --tp 1 --pp 2 --ep 8 --etp 1 --distributed-timeout-minutes 60 --distributed-save --save-every-n-ranks 1</code></pre>
+        </div>
+      </section>
+      <section class="verification-expected-result">
+        <h5>Expected result</h5>
+        <p>Distributed Hybrid-to-HF export on 16 GB200 GPUs strictly reloads the imported checkpoint and writes 279 safetensors shards plus model.safetensors.index.json in about 13 minutes. All 58794 exported tensors match the pinned source keys, shapes, dtypes and values exactly; the 791 tensors of the appended MTP layer (model.layers.78.*) are excluded because MTP is disabled by default, and shared-indexer layers carry no indexer tensors on either side. generation_config.json is preserved from the source because Transformers strict validation rejects re-saving it.</p>
+      </section>
+    </article>
+    <article id="glm5-2-pretrain-gb200" class="verification-model-detail" data-entry-detail="glm5-2-pretrain-gb200" tabindex="-1">
+      <header class="verification-model-detail-heading">
+        <h4>Pretrain · GB200</h4>
+        <span class="verification-status verification-status--verified" title="Verified">✓ Verified</span>
+      </header>
+      <dl class="verification-model-detail-meta">
+        <div><dt>Hardware</dt><dd>GB200</dd></div>
+        <div><dt>Precision</dt><dd>BF16</dd></div>
+        <div><dt>Last verified</dt><dd>2026-10-07</dd></div>
+      </dl>
+      <section class="verification-recorded-metrics">
+        <h5>Recorded metrics</h5>
+        <dl class="verification-metric-list">
+          <div>
+            <dt>Initial loss</dt>
+            <dd>1.039136</dd>
+          </div>
+          <div>
+            <dt>Final loss</dt>
+            <dd>0.8746876</dd>
+          </div>
+          <div>
+            <dt>Step time · last 10 avg</dt>
+            <dd>32,331.530 ms</dd>
+          </div>
+          <div>
+            <dt>Model throughput · last 10 avg</dt>
+            <dd>219.080 TFLOP/s/GPU</dd>
+          </div>
+          <div>
+            <dt>Token throughput · last 10 avg</dt>
+            <dd>675.667 tokens/s/GPU</dd>
+          </div>
+        </dl>
+      </section>
+      <section class="verification-command-section">
+        <h5>Exact command</h5>
+        <div class="verification-command">
+          <div class="verification-command-heading">
+            <span>Command</span>
+            <button type="button" class="verification-copy-command">Copy</button>
+          </div>
+          <pre><code class="language-bash">./scripts/training/train.sh --wait --nodes 48 --gpus-per-node 4 --recipe glm52_pretrain_192gpu_gb200_bf16_config --mode pretrain --dataset megatron-indexed --seq_length 4096 --max_steps 20 --lr 3e-6 --min_lr 3e-7 --warmup_iters 10 --pretrained_checkpoint work/model-verification/glm5-2/hybrid/gpu-megatron-mtp-20261007-135936/iter_0000000 &#x27;dataset.blend=[[&quot;work/data/wikitext103/wikitext103_glm52_text_document&quot;],null]&#x27; dataset.path_to_cache=work/cache/glm5-2/wikitext-glm52-gb200 dataset.random_seed=1234 dataset.num_workers=8 tokenizer.use_tokenizer_vocab_size=false rng.seed=1234 scheduler.lr_decay_iters=20 model.moe_router_force_load_balancing=false checkpoint.load=null checkpoint.save_optim=true checkpoint.save_rng=true checkpoint.load_optim=true checkpoint.load_rng=true checkpoint.finetune=false --save_dir work/model-verification/glm5-2/hybrid/pretrain-wikitext-gb200-20261007-135936/checkpoints --save_interval 10 logger.log_interval=1 logger.log_throughput=true logger.tensorboard_dir=null logger.save_config_filepath=work/model-verification/glm5-2/hybrid/pretrain-wikitext-gb200-20261007-135936/resolved-config.yaml dist.distributed_timeout_minutes=60</code></pre>
+        </div>
+      </section>
+      <section class="verification-expected-result">
+        <h5>Expected result</h5>
+        <p>Completed 20 BF16 Hybrid warm-start steps on 192 GB200 GPUs with WikiText-103 raw train (29444 articles, 120372951 tokens), tokenized with the pinned GLM-5.2 tokenizer. Used 4K sequences, GBS/MBS 1024/1, MTP1, all-to-all expert dispatch and natural routing. LR warmed up to 3e-6 at step 10 and decayed to 3e-7 at step 20. Saved full step-10 and step-20 checkpoints with optimizer, scheduler and RNG state, plus the post-setup config. All losses and gradients were finite with zero skipped or NaN iterations; the step-10 checkpoint passed the separate resume comparison.</p>
+      </section>
+    </article>
+    <article id="glm5-2-sft-gb200" class="verification-model-detail" data-entry-detail="glm5-2-sft-gb200" tabindex="-1">
+      <header class="verification-model-detail-heading">
+        <h4>SFT · GB200</h4>
+        <span class="verification-status verification-status--verified" title="Verified">✓ Verified</span>
+      </header>
+      <dl class="verification-model-detail-meta">
+        <div><dt>Hardware</dt><dd>GB200</dd></div>
+        <div><dt>Precision</dt><dd>BF16</dd></div>
+        <div><dt>Last verified</dt><dd>2026-10-15</dd></div>
+      </dl>
+      <section class="verification-recorded-metrics">
+        <h5>Recorded metrics</h5>
+        <dl class="verification-metric-list">
+          <div>
+            <dt>Initial loss</dt>
+            <dd>1.913887</dd>
+          </div>
+          <div>
+            <dt>Final loss</dt>
+            <dd>1.063773</dd>
+          </div>
+          <div>
+            <dt>Step time · last 10 avg</dt>
+            <dd>7,959.680 ms</dd>
+          </div>
+          <div>
+            <dt>Model throughput · last 10 avg</dt>
+            <dd>17.890 TFLOP/s/GPU</dd>
+          </div>
+          <div>
+            <dt>Token throughput · last 10 avg</dt>
+            <dd>42.883 tokens/s/GPU</dd>
+          </div>
+        </dl>
+      </section>
+      <section class="verification-command-section">
+        <h5>Exact command</h5>
+        <div class="verification-command">
+          <div class="verification-command-heading">
+            <span>Command</span>
+            <button type="button" class="verification-copy-command">Copy</button>
+          </div>
+          <pre><code class="language-bash">./scripts/training/train.sh --wait --nodes 48 --gpus-per-node 4 --recipe glm52_gb200_sft_config --mode sft --max_steps 100 --save_dir work/model-verification/glm5-2/hybrid/sft-causal-fixed-gb200-glm-remaining-20261007-175000/checkpoints --save_interval 100 checkpoint.load=null checkpoint.save_optim=false checkpoint.save_rng=false logger.log_interval=1 logger.log_throughput=true logger.tensorboard_dir=null logger.save_config_filepath=work/model-verification/glm5-2/hybrid/sft-causal-fixed-gb200-glm-remaining-20261007-175000/launch-config.yaml dist.distributed_timeout_minutes=60 --pretrained_checkpoint work/model-verification/glm5-2/hybrid/hf-4d67f66cc64d3219133b767c253b2ad1425c6c88 dataset.hf_output_root=work/data/glm5-2/tulu3-sft-20261006-142455</code></pre>
+        </div>
+      </section>
+      <section class="verification-expected-result">
+        <h5>Expected result</h5>
+        <p>Completed 100 BF16 Hybrid full-SFT steps with pinned Tulu 3 train[:10000], 8K packing, GBS/MBS 8/1, TP1/PP6/EP32 and CP4 on 192 GB200 GPUs, with MTP1, HybridEP and natural routing, warm-started from the pinned Hugging Face checkpoint. All LM/MTP losses were finite with zero skipped or NaN iterations, and the step-100 checkpoint and post-setup configuration were saved.</p>
+      </section>
+    </article>
+    <article id="glm5-2-sft-long-context-gb200" class="verification-model-detail" data-entry-detail="glm5-2-sft-long-context-gb200" tabindex="-1">
+      <header class="verification-model-detail-heading">
+        <h4>Long Context · GB200</h4>
+        <span class="verification-status verification-status--verified" title="Verified">✓ Verified</span>
+      </header>
+      <dl class="verification-model-detail-meta">
+        <div><dt>Hardware</dt><dd>GB200</dd></div>
+        <div><dt>Precision</dt><dd>BF16</dd></div>
+        <div><dt>Last verified</dt><dd>2026-10-08</dd></div>
+      </dl>
+      <section class="verification-recorded-metrics">
+        <h5>Recorded metrics</h5>
+        <dl class="verification-metric-list">
+          <div>
+            <dt>Initial loss</dt>
+            <dd>3.501637</dd>
+          </div>
+          <div>
+            <dt>Final loss</dt>
+            <dd>3.345199</dd>
+          </div>
+          <div>
+            <dt>Step time · last 10 avg</dt>
+            <dd>115,202.340 ms</dd>
+          </div>
+          <div>
+            <dt>Model throughput · last 10 avg</dt>
+            <dd>110.510 TFLOP/s/GPU</dd>
+          </div>
+          <div>
+            <dt>Token throughput · last 10 avg</dt>
+            <dd>331.845 tokens/s/GPU</dd>
+          </div>
+        </dl>
+      </section>
+      <section class="verification-command-section">
+        <h5>Exact command</h5>
+        <div class="verification-command">
+          <div class="verification-command-heading">
+            <span>Command</span>
+            <button type="button" class="verification-copy-command">Copy</button>
+          </div>
+          <pre><code class="language-bash">./scripts/training/train.sh --wait --nodes 48 --gpus-per-node 4 --recipe glm52_sft_192gpu_gb200_bf16_128k_config --mode sft --max_steps 20 --save_dir work/model-verification/glm5-2/hybrid/long-gb200-glm-remaining-20261007-175000/checkpoints --save_interval 20 checkpoint.load=null checkpoint.save_optim=false checkpoint.save_rng=false logger.log_interval=1 logger.log_throughput=true logger.tensorboard_dir=null logger.save_config_filepath=work/model-verification/glm5-2/hybrid/long-gb200-glm-remaining-20261007-175000/launch-config.yaml dist.distributed_timeout_minutes=60 --pretrained_checkpoint work/model-verification/glm5-2/hybrid/hf-4d67f66cc64d3219133b767c253b2ad1425c6c88 dataset.dataset_root=work/data/glm5-2/long-glm-remaining-20261007-175000</code></pre>
+        </div>
+      </section>
+      <section class="verification-expected-result">
+        <h5>Expected result</h5>
+        <p>Completed 20 BF16 Hybrid full-SFT steps with 128K synthetic packed sequences, GBS/MBS 56/1 and CP32 on 192 GB200 GPUs, with MTP1, HybridEP and natural routing. The exact runtime passed full-shape causal top-k reference checks with explicit cuDNN query offsets before training. All LM/MTP losses and gradients were finite with zero skipped or NaN iterations. Saved the complete final model checkpoint and post-setup configuration.</p>
+      </section>
+    </article>
+    <article id="glm5-2-peft-gb200" class="verification-model-detail" data-entry-detail="glm5-2-peft-gb200" tabindex="-1">
+      <header class="verification-model-detail-heading">
+        <h4>LoRA · GB200</h4>
+        <span class="verification-status verification-status--verified" title="Verified">✓ Verified</span>
+      </header>
+      <dl class="verification-model-detail-meta">
+        <div><dt>Hardware</dt><dd>GB200</dd></div>
+        <div><dt>Precision</dt><dd>BF16</dd></div>
+        <div><dt>Last verified</dt><dd>2026-10-15</dd></div>
+      </dl>
+      <section class="verification-recorded-metrics">
+        <h5>Recorded metrics</h5>
+        <dl class="verification-metric-list">
+          <div>
+            <dt>Initial loss</dt>
+            <dd>1.903709</dd>
+          </div>
+          <div>
+            <dt>Final loss</dt>
+            <dd>0.8795374</dd>
+          </div>
+          <div>
+            <dt>Step time · last 10 avg</dt>
+            <dd>5,695.940 ms</dd>
+          </div>
+          <div>
+            <dt>Model throughput · last 10 avg</dt>
+            <dd>21.570 TFLOP/s/GPU</dd>
+          </div>
+          <div>
+            <dt>Token throughput · last 10 avg</dt>
+            <dd>59.926 tokens/s/GPU</dd>
+          </div>
+        </dl>
+      </section>
+      <section class="verification-command-section">
+        <h5>Exact command</h5>
+        <div class="verification-command">
+          <div class="verification-command-heading">
+            <span>Command</span>
+            <button type="button" class="verification-copy-command">Copy</button>
+          </div>
+          <pre><code class="language-bash">./scripts/training/train.sh --wait --nodes 48 --gpus-per-node 4 --recipe glm52_peft_192gpu_gb200_bf16_config --mode lora --max_steps 100 --save_dir work/model-verification/glm5-2/hybrid/peft-gb200-glm-remaining-20261007-175000/checkpoints --save_interval 100 checkpoint.load=null checkpoint.save_optim=true checkpoint.save_rng=true logger.log_interval=1 logger.log_throughput=true logger.tensorboard_dir=null logger.save_config_filepath=work/model-verification/glm5-2/hybrid/peft-gb200-glm-remaining-20261007-175000/launch-config.yaml dist.distributed_timeout_minutes=60 --pretrained_checkpoint work/model-verification/glm5-2/hybrid/hf-4d67f66cc64d3219133b767c253b2ad1425c6c88 dataset.hf_output_root=work/data/glm5-2/peft-glm-remaining-20261007-175000</code></pre>
+        </div>
+      </section>
+      <section class="verification-expected-result">
+        <h5>Expected result</h5>
+        <p>Completed 100 BF16 Hybrid LoRA steps on 192 GB200 GPUs with pinned Tulu 3 train[:10000], 2K offline packing, GBS/MBS 32/1, TP1/PP6/EP32, MTP1, all-to-all expert dispatch and natural routing, warm-started from the pinned Hugging Face checkpoint. All LM/MTP losses were finite with zero skipped or NaN iterations, and the step-100 adapter checkpoint with optimizer and RNG state was saved.</p>
+      </section>
+    </article>
+  </div>
+</div>
 
-（2）根据任务填写脚本变量并执行
-
-#### pretrain
-```shell
-docker exec -it "your container name" bash
-cd /workspace/Megatron-bridge-das/examples/glm
-
-# train_glm52_pretrain.sh
-PORT=${PORT:-12345} # Set the SSH port by running /usr/sbin/sshd -p <port> inside the Docker container on each node. For example: /usr/sbin/sshd -p 12345
-export LOCAL_HF_PATH=${LOCAL_HF_PATH:-/path/to/GLM-5.2}
-
-./train_glm52_pretrain.sh <RECIPE> <MODE> [HOSTFILE] [NODES]
-
-RECIPE: SUPPORTED_RECIPES in train_glm52_pretrain.sh
-MODE: dryrun or train # 配置dryrun时不需要再跟HOSTFILE和NODES参数
-HOSTFILE: path to hostfile
-NODES: The number of nodes you use
-
-```
-
-#### sft
-```shell
-docker exec -it "your container name" bash
-cd /workspace/Megatron-bridge-das/examples/glm
-
-# train_glm52_sft.sh
-PORT=${PORT:-12345} # Set the SSH port by running /usr/sbin/sshd -p <port> inside the Docker container on each node. For example: /usr/sbin/sshd -p 12345
-DATA_PATH=${DATA_PATH:-/path/to/tulu-3-sft-mixture/data}
-export LOCAL_HF_PATH=${LOCAL_HF_PATH:-/path/to/GLM-5.2}
-
-./train_glm52_sft.sh <RECIPE> <MODE> [HOSTFILE] [NODES]
-
-RECIPE: SUPPORTED_RECIPES in train_glm52_sft.sh
-MODE: dryrun or sft # 配置dryrun时不需要再跟HOSTFILE和NODES参数
-HOSTFILE: path to hostfile
-NODES: The number of nodes you use
-
-```
+<!-- END GENERATED VERIFIED CONFIGURATIONS -->

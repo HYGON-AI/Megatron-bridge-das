@@ -1,0 +1,180 @@
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""
+Unit tests for Step-3.5-Flash recipe configuration builders.
+
+Monkeypatch ``AutoBridge`` to a builder-only fake that returns a real, strict
+``Step35ModelConfig`` built from a small Step-3.5 config, so the recipe wiring
+runs without HF Hub I/O or real Megatron-Core layer construction and every
+field the recipe sets must be declared by the builder config. Also
+monkeypatches ``apply_flex_dispatcher_backend`` so the recipe does not poke
+CUDA device properties during tests.
+"""
+
+import importlib
+from typing import Callable
+
+import pytest
+import torch
+
+from megatron.bridge.models.conversion.auto_bridge import AutoBridge
+from megatron.bridge.models.stepfun.configuration_step35 import Step35Config
+from megatron.bridge.models.stepfun.step35_config import Step35ModelConfig
+from tests.unit_tests.recipes.recipe_test_utils import patch_recipe_module_global
+
+
+_step35_module = importlib.import_module("megatron.bridge.recipes.stepfun.step35")
+_STEP35_RECIPE_FUNCS = [
+    getattr(_step35_module, name)
+    for name in getattr(importlib.import_module("megatron.bridge.recipes.stepfun"), "__all__", [])
+    if callable(getattr(_step35_module, name, None))
+]
+
+
+def _step35_hf_config() -> Step35Config:
+    """A small Step-3.5 architecture: dense-first MoE, hybrid attention, one MTP layer."""
+    return Step35Config(
+        hidden_size=128,
+        intermediate_size=256,
+        num_attention_heads=4,
+        num_attention_groups=2,
+        num_hidden_layers=4,
+        vocab_size=512,
+        moe_intermediate_size=64,
+        moe_num_experts=8,
+        moe_top_k=2,
+        share_expert_dims=64,
+        head_dim=32,
+        layer_types=[
+            "full_attention",
+            "sliding_attention",
+            "sliding_attention",
+            "sliding_attention",
+            "full_attention",
+        ],
+        num_nextn_predict_layers=1,
+        moe_layers_enum="2,3",
+        rope_theta=[5e6, 1e4, 1e4, 1e4, 5e6],
+        sliding_window=64,
+        torch_dtype="bfloat16",
+        tie_word_embeddings=False,
+        architectures=["Step3p5ForCausalLM"],
+    )
+
+
+class _FakeBridge:
+    """Return a real strict model config while rejecting the provider API."""
+
+    @staticmethod
+    def from_hf_pretrained(hf_path: str, **kwargs):
+        return _FakeBridge()
+
+    def get_model_config(self) -> Step35ModelConfig:
+        return AutoBridge.from_hf_config(_step35_hf_config()).get_model_config()
+
+    def to_megatron_provider(self, load_weights: bool = False):
+        raise AssertionError("Step-3.5 recipes must use get_model_config(), not the legacy provider API")
+
+
+def _assert_basic_config(cfg):
+    from megatron.bridge.training.config import ConfigContainer
+
+    assert isinstance(cfg, ConfigContainer)
+    assert cfg.model is not None
+    assert cfg.train is not None
+    assert cfg.optimizer is not None
+    assert cfg.scheduler is not None
+    assert cfg.dataset is not None
+    assert cfg.logger is not None
+    assert cfg.tokenizer is not None
+    assert cfg.checkpoint is not None
+    assert cfg.rng is not None
+    assert cfg.train.global_batch_size >= 1
+    assert cfg.train.micro_batch_size >= 1
+
+
+def _patch_recipe_env(monkeypatch, mod):
+    """Patch ``AutoBridge`` and ``apply_flex_dispatcher_backend`` in the recipe
+    module so the recipe builds without hitting HF Hub or CUDA."""
+    patch_recipe_module_global(monkeypatch, mod, "AutoBridge", _FakeBridge)
+    patch_recipe_module_global(monkeypatch, mod, "apply_flex_dispatcher_backend", lambda *a, **kw: None)
+
+
+# ---------------------------------------------------------------------------
+# Parametrized "each recipe builds" sanity test
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("recipe_func", _STEP35_RECIPE_FUNCS)
+def test_each_step35_recipe_builds_config(recipe_func: Callable, monkeypatch):
+    mod = importlib.import_module(recipe_func.__module__)
+    _patch_recipe_env(monkeypatch, mod)
+
+    cfg = recipe_func()
+    _assert_basic_config(cfg)
+    assert isinstance(cfg.model, Step35ModelConfig)
+
+
+# ---------------------------------------------------------------------------
+# Defaults specific to the Step-3.5-Flash pretrain recipe
+# ---------------------------------------------------------------------------
+
+
+def test_step35_196b_pretrain_defaults(monkeypatch):
+    """The pretrain recipe ships with the alignment-run parallelism layout:
+    TP=1, PP=8, CP=8, EP=8, MoE alltoall + permute_fusion + grouped_gemm, etc."""
+    from megatron.bridge.recipes.stepfun.step35 import step35_196b_a11b_pretrain_config
+
+    mod = importlib.import_module("megatron.bridge.recipes.stepfun.step35")
+    _patch_recipe_env(monkeypatch, mod)
+
+    cfg = step35_196b_a11b_pretrain_config()
+    _assert_basic_config(cfg)
+
+    m = cfg.model
+    # Parallelism (alignment / resume layout)
+    assert m.tensor_model_parallel_size == 1
+    assert m.pipeline_model_parallel_size == 8
+    assert m.context_parallel_size == 8
+    assert m.expert_model_parallel_size == 8
+    assert m.expert_tensor_parallel_size == 1
+    assert m.sequence_parallel is True
+    assert m.seq_length == 4096
+    assert m.pipeline_dtype is torch.bfloat16
+
+    # MoE wiring
+    assert m.moe_grouped_gemm is True
+    assert m.moe_permute_fusion is True
+    assert m.moe_token_dispatcher_type == "alltoall"
+    assert m.moe_flex_dispatcher_backend == "deepep"
+
+    # Memory / recompute
+    assert m.recompute_granularity == "full"
+    assert m.recompute_method == "uniform"
+    assert m.recompute_num_layers == 1
+
+    # DDP
+    assert cfg.ddp.use_distributed_optimizer is True
+    assert cfg.ddp.use_megatron_fsdp is False
+
+
+def test_step35_196b_recipe_uses_stepfun_tokenizer(monkeypatch):
+    from megatron.bridge.recipes.stepfun.step35 import step35_196b_a11b_pretrain_config
+
+    mod = importlib.import_module("megatron.bridge.recipes.stepfun.step35")
+    _patch_recipe_env(monkeypatch, mod)
+
+    cfg = step35_196b_a11b_pretrain_config()
+    assert cfg.tokenizer.tokenizer_model == "stepfun-ai/Step-3.5-Flash"

@@ -1,0 +1,284 @@
+# VLM Bridge Patterns
+
+Reference implementations:
+- **Builder-backed config and conversion:** Muse Glimmer (`src/megatron/bridge/models/muse_glimmer/`)
+- **Builder-backed HybridModel VLM with audio:** Nemotron Omni (`src/megatron/bridge/models/nemotron_omni/`)
+- **Megatron vision encoder:** Qwen3.5-VL (`src/megatron/bridge/models/qwen_vl/`)
+- **HF vision encoder:** Gemma3-VL (`src/megatron/bridge/models/gemma_vl/`)
+
+For new support, invoke HF vision/video and audio encoders directly. Use the
+HF-encoder pattern below and keep only modality integration and genuinely
+missing language computations in Bridge's `modeling_<model>/` directory.
+The native encoder example documents existing models; do not copy or port an
+encoder merely to follow that example. Select the language builder requested by
+the task (including HybridModel); the GPT provider snippets below illustrate
+older integration patterns and do not require GPTModel.
+
+## Model Config and Builder Pattern
+
+New multimodal bridges describe the model with a builder-backed `ModelConfig`, as Muse Glimmer
+does:
+
+- `<model>_config.py` — a Bridge `TransformerConfig` subclass for extra decoder fields, and a
+  `ModelConfig` subclass (`ModelConfigOverrideMixin` plus Megatron Core's `GPTModelConfig` or
+  `HybridModelConfig`) that declares the vision config, token IDs and freeze options, and names its
+  builder and `transformer_config_class`.
+- `<model>_builder.py` — a `GPTModelBuilder` or `HybridModelBuilder` subclass whose `build_model()`
+  combines the vision encoder, projector and language model.
+- `<model>_bridge.py` — sets `MODEL_CONFIG_CLASS` and `USE_MODEL_CONFIG_FOR_CONVERSION = True`, and
+  overrides `hf_config_to_model_config()` (reading `text_config`, `vision_config` and the top-level
+  fields listed below) and `megatron_to_hf_config()`.
+
+Recipes then use `AutoBridge.from_hf_pretrained(...).get_model_config()`.
+
+### Migrating a provider-based VLM
+
+Qwen3.5-VL (`qwen_vl/qwen35_vl_config.py`, `qwen_vl/qwen35_vl_builder.py`) moves a VLM whose model class
+was written for a provider onto a builder without changing the model:
+
+- Subclass the language family's builder config, here `BridgeGPTModelConfig`. Keep the vision-language
+  settings on the outer config: the Hugging Face vision config, token IDs, vision geometry, freeze options,
+  and the vision encoder's recompute and CUDA graph settings. On the nested transformer config, declare only
+  the fields that the model and its layers read from the config they are built with.
+- In the bridge, start from the text bridge's `hf_config_to_model_config_kwargs(text_config)`, add the
+  vision-language fields, and return the same kwargs from `hf_config_to_provider_kwargs()`. Set every
+  provider default that differs from the text kwargs explicitly, so the deprecated provider path stays
+  unchanged.
+- Have the builder construct the existing model class, so checkpoint keys and the bridge's registered target
+  stay the same. Pass the outer config to the model for the settings it reads at construction, which a
+  provider carries on the language config (`Qwen3VLModel(model_config=...)`).
+- Subclass bridges that must stay on providers, such as classification-head bridges, opt out with
+  `MODEL_CONFIG_CLASS = None` and `USE_MODEL_CONFIG_FOR_CONVERSION = False`.
+- A builder-built model's `config` is its transformer config, so a step function reads outer fields such as
+  `seq_length` from `state.cfg.model`. `GPTModelConfig.finalize()` also runs checks that a provider's
+  `provide()` override may skip, such as requiring the TE RNG tracker for CUDA graphs and equal virtual
+  pipeline chunks.
+
+## Provider Pattern (legacy)
+
+Existing VLM families subclass `GPTModelProvider`. VLM providers add vision-specific fields on top of
+standard LLM fields.
+
+```python
+@dataclass
+class MyVLModelProvider(GPTModelProvider):
+    # Vision config (passed as a HF config object)
+    vision_config: Optional[Any] = None
+
+    # VLM-specific token IDs
+    image_token_id: Optional[int] = None
+    video_token_id: Optional[int] = None
+
+    # Freeze options
+    freeze_language_model: bool = False
+    freeze_vision_model: bool = False
+    freeze_vision_projection: bool = False
+
+    # Whether to use HF vision model (vs Megatron)
+    use_hf_vision_model: bool = False
+
+    def provide(self, pre_process=None, post_process=None, vp_stage=None) -> MyVLModel:
+        # Build language layer spec
+        language_transformer_layer_spec = get_gpt_layer_with_transformer_engine_spec(...)
+        # Build vision config if needed
+        # Instantiate combined model
+        model = MyVLModel(config=self, ...)
+        if self.freeze_language_model or self.freeze_vision_model or self.freeze_vision_projection:
+            model.freeze(self.freeze_language_model, self.freeze_vision_model, self.freeze_vision_projection)
+        return model
+
+    def provide_language_model(self, pre_process=None, post_process=None, vp_stage=None):
+        """Returns language-only model (for text-only inference)."""
+        return GPTModel(config=self, ...)
+
+    def validate_parallelism(self):
+        if self.num_query_groups < self.tensor_model_parallel_size:
+            raise ValueError(f"TP ({self.tensor_model_parallel_size}) must be <= num_query_groups ({self.num_query_groups})")
+```
+
+### Key config fields by source
+
+Read these from the correct config level:
+
+| Field | Source (VLM) | Notes |
+|-------|-------------|-------|
+| `num_layers`, `hidden_size`, `ffn_hidden_size` | `text_config` | Core architecture |
+| `num_attention_heads`, `num_key_value_heads` | `text_config` | Attention config |
+| `vocab_size`, `max_position_embeddings` | `text_config` | Tokenizer/position |
+| `rope_theta` | `text_config` | RoPE |
+| `tie_word_embeddings` | **top-level** `hf_config` | CRITICAL: not text_config |
+| `vision_config` | **top-level** `hf_config` | Vision encoder config |
+| `image_token_id`, `video_token_id` | **top-level** `hf_config` | Special token IDs |
+
+## Bridge Pattern (legacy provider)
+
+```python
+@MegatronModelBridge.register_bridge(
+    source="MyModelForConditionalGeneration",   # HF class name (string if not importable)
+    target=MyVLModel,                            # Megatron model class
+    provider=MyVLModelProvider,                  # Provider class
+    model_type="my_model",                       # HF model_type for export
+)
+class MyVLBridge(MegatronModelBridge):
+    def provider_bridge(self, hf_pretrained: PreTrainedCausalLM) -> MyVLModelProvider:
+        hf_config = hf_pretrained.config
+        text_config = hf_config.text_config
+
+        # Map text config to provider kwargs using base class helper
+        provider_kwargs = self.hf_config_to_provider_kwargs(text_config)
+        provider = MyVLModelProvider(**provider_kwargs)
+
+        # CRITICAL: tie_word_embeddings from top-level config
+        provider.share_embeddings_and_output_weights = getattr(hf_config, "tie_word_embeddings", False)
+
+        # Vision config
+        provider.vision_config = hf_config.vision_config
+
+        # VLM-specific fields from top-level config
+        provider.image_token_id = getattr(hf_config, "image_token_id", None)
+        provider.video_token_id = getattr(hf_config, "video_token_id", None)
+
+        return provider
+
+    def mapping_registry(self) -> MegatronMappingRegistry:
+        return MegatronMappingRegistry(
+            # Language model mappings (prefixed with language_model.*)
+            AutoMapping(megatron_param="language_model.embedding.word_embeddings.weight",
+                       hf_param="model.embed_tokens.weight"),
+            AutoMapping(megatron_param="language_model.output_layer.weight",
+                       hf_param="model.lm_head.weight"),
+            # ... language decoder layers ...
+            QKVMapping(
+                megatron_param="language_model.decoder.layers.*.self_attention.linear_qkv.weight",
+                q="model.language_model.layers.*.self_attn.q_proj.weight",
+                k="model.language_model.layers.*.self_attn.k_proj.weight",
+                v="model.language_model.layers.*.self_attn.v_proj.weight",
+            ),
+            # Vision model mappings
+            AutoMapping(megatron_param="vision_model.patch_embed.proj.**",
+                       hf_param="model.visual.patch_embed.proj.**"),
+            # ... vision layers ...
+        )
+```
+
+### Import types
+
+```python
+from megatron.bridge.models.hf_pretrained.causal_lm import PreTrainedCausalLM
+```
+
+## VLM Model Class Patterns
+
+### Normalization backend
+
+Thread the language model's `TransformerConfig` into custom Megatron vision modules so affine vision
+LayerNorm/RMSNorm instances use Transformer Engine and the same initialization device as the rest of
+the model. Assume TE is installed in production model code and instantiate `TENorm` or the TE module
+directly. Do not add model-local wrappers, `HAVE_TE` branches, copied norm kernels, or `torch.nn`
+fallbacks for ordinary affine normalization. When the HF architecture specifies a weightless norm,
+first verify whether the pinned TE API supports that exact parameter-free contract; a custom
+parameter-free path is an exception only when TE cannot express it. Prefer a framework-native
+parameter-free module or direct functional call over a wrapper or copied formula, and do not add
+checkpoint parameters to simulate it.
+
+### Option A: Megatron Vision Encoder (Qwen3.5 pattern)
+
+Both vision and language use Megatron modules. Full parallelism support.
+
+```python
+class MyVLModel(MegatronModule):
+    def __init__(self, config, pre_process=True, post_process=True, ...):
+        if pre_process:
+            self.vision_model = MyVisionModel(config.vision_config, ...)
+        self.language_model = MyGPTModel(config, ...)
+
+    def forward(self, input_ids, pixel_values, image_grid_thw, ...):
+        # 1. Vision: pixel_values → vision_embeds
+        vision_embeds = self.vision_model(pixel_values, image_grid_thw)
+        # 2. Text embeddings
+        text_embeds = self.language_model.embedding(input_ids)
+        # 3. Scatter vision into text at image token positions
+        combined = text_embeds.clone()
+        combined[vision_mask] = vision_embeds
+        # 4. Language model forward
+        return self.language_model(decoder_input=combined, ...)
+
+    def freeze(self, freeze_language, freeze_vision, freeze_projection):
+        if freeze_language:
+            for p in self.language_model.parameters(): p.requires_grad = False
+        if freeze_vision:
+            for p in self.vision_model.parameters(): p.requires_grad = False
+        # projection freeze logic
+```
+
+### Option B: HF Vision Encoder (Gemma3 pattern)
+
+HF vision encoder + Megatron projector + Megatron language model. Simpler to implement.
+
+```python
+class MyVLModel(MegatronModule):
+    def __init__(self, config, pre_process=True, post_process=True, ...):
+        if pre_process:
+            self.vision_tower = AutoModel.from_config(config.vision_config)
+            hook_hf_module_setattr_for_tp_grad_sync(self.vision_tower)
+            self.multi_modal_projector = MyProjector(config)
+        self.language_model = config.provide_language_model(pre_process, post_process)
+
+    def forward(self, input_ids, pixel_values, ...):
+        text_embeds = self.language_model.embedding(input_ids)
+        if pixel_values is not None:
+            image_features = self.vision_tower(pixel_values).pooler_output
+            image_features = self.multi_modal_projector(image_features)
+            text_embeds.masked_scatter_(special_image_mask, image_features)
+        return self.language_model(decoder_input=text_embeds, ...)
+```
+
+#### Building an HF-encoder wrapper from a builder config
+
+Gemma 4 VL (`gemma_vl/gemma4_vl_config.py`, `gemma_vl/gemma4_vl_builder.py`) builds such a wrapper, written for a
+provider, from a builder config:
+
+- A builder-built model's `config` is its transformer config. When the wrapper, or Hugging Face methods bound to
+  it, read vision-language settings from `self.config`, declare those fields on the vision-language transformer
+  config. Keep the rest, such as freeze options, on the outer config.
+- The builder passes the wrapper a language-model factory, `partial(super().build_model, pg_collection)`, in place
+  of `provide_language_model()`, so the encoders and the language model are created in the provider's order. It
+  also passes the process groups, which a provider carries on itself as `_pg_collection`.
+- Checkpoint conversion builds a builder model without the `Float16Module` wrapper, which casts a provider-built
+  model to `params_dtype`. Cast the Hugging Face encoders to `params_dtype` in the wrapper or the builder;
+  `Gemma4VLModel` casts its encoders itself.
+- Hugging Face configs are dataclasses, and Megatron Core's `ModelConfig.as_dict()` reads every field of a nested
+  dataclass. `Gemma4TextConfig` raises on its per-layer attributes, so the Gemma 4 VL configs serialize their
+  Hugging Face sub-configs with `_ConfigContainerBase._convert_value_to_dict()`, as provider checkpoints do.
+- A remote-code Hugging Face config sets its settings as attributes that its dataclass does not declare, so the
+  default deserialization drops them. Kimi K2.5 VL (`kimi_vl/kimi_k25_vl_config.py`) restores its vision config
+  with the config class's own `from_dict()`.
+- A wrapper that loads its encoders from the checkpoint's own code, as `KimiK25VLModel` does, needs the checkpoint
+  and the permission to run its code. `get_model_config()` passes the bridge only the Hugging Face config, so the
+  Kimi K2.5 VL bridge records the config's `name_or_path` and the bridge's `trust_remote_code`, which `AutoBridge`
+  sets from its source, as `hf_model_path` and `trust_remote_code` on the model config.
+
+## Weight Mapping Naming Conventions
+
+VLM weight names typically have these prefixes:
+
+| Megatron prefix | HF prefix | Component |
+|----------------|-----------|-----------|
+| `language_model.*` | `model.language_model.*` or `model.layers.*` | Text decoder |
+| `language_model.embedding.*` | `model.embed_tokens.*` | Text embeddings |
+| `language_model.output_layer.*` | `model.lm_head.*` or `lm_head.*` | Output head |
+| `vision_model.*` | `model.visual.*` or `vision_tower.*` | Vision encoder |
+
+Check the actual HF model's `state_dict()` keys to determine exact naming.
+
+## Common Mapping Types for VLMs
+
+| Mapping Class | Use Case |
+|--------------|----------|
+| `AutoMapping` | 1:1 name mapping (most weights) |
+| `QKVMapping` | Fused Q/K/V projections |
+| `ConcatenatedQKVMapping` | Vision QKV (different from language) |
+| `GatedMLPMapping` | gate_proj + up_proj → linear_fc1 |
+| `ReplicatedMapping` | Weights replicated across TP ranks (e.g. patch_embed) |
+| `ExpertMLPGateUpProjMapping` | MoE gate+up projections |
+| `ExpertMLPDownProjMapping` | MoE down projections |
