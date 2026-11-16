@@ -13,10 +13,10 @@ diff --git a/src/megatron/bridge/recipes/__init__.py b/src/megatron/bridge/recip
  from megatron.bridge.recipes.gpt_oss import *
 diff --git a/src/megatron/bridge/recipes/glm5next/__init__.py b/src/megatron/bridge/recipes/glm5next/__init__.py
 new file mode 100644
-index 0000000..0f2d0779b
+index 0000000..f9d43d570
 --- /dev/null
 +++ b/src/megatron/bridge/recipes/glm5next/__init__.py
-@@ -0,0 +1,24 @@
+@@ -0,0 +1,26 @@
 +# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
 +# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
 +#
@@ -34,19 +34,21 @@ index 0000000..0f2d0779b
 +from .glm53_flash import (
 +    glm53_flash_pretrain_16gpu_bw1300_bf16_test_config,
 +    glm53_flash_sft_32gpu_bw1101_bf16_test_config,
++    glm53_flash_peft_32gpu_bw1101_bf16_config,
 +)
 +
 +
 +__all__ = [
 +    "glm53_flash_pretrain_16gpu_bw1300_bf16_test_config",
 +    "glm53_flash_sft_32gpu_bw1101_bf16_test_config",
++    "glm53_flash_peft_32gpu_bw1101_bf16_config",
 +]
 diff --git a/src/megatron/bridge/recipes/glm5next/glm53_flash.py b/src/megatron/bridge/recipes/glm5next/glm53_flash.py
 new file mode 100644
-index 0000000..bdbed5676
+index 0000000..831cb14c4
 --- /dev/null
 +++ b/src/megatron/bridge/recipes/glm5next/glm53_flash.py
-@@ -0,0 +1,29 @@
+@@ -0,0 +1,31 @@
 +# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
 +# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
 +#
@@ -69,19 +71,21 @@ index 0000000..bdbed5676
 +from megatron.bridge.recipes.glm5next.bw1300.glm53_flash import (
 +    glm53_flash_pretrain_16gpu_bw1300_bf16_test_config,
 +    glm53_flash_sft_32gpu_bw1101_bf16_test_config,
++    glm53_flash_peft_32gpu_bw1101_bf16_config,
 +)
 +
 +
 +__all__ = [
 +    "glm53_flash_pretrain_16gpu_bw1300_bf16_test_config",
 +    "glm53_flash_sft_32gpu_bw1101_bf16_test_config",
++    "glm53_flash_peft_32gpu_bw1101_bf16_config",
 +]
 diff --git a/src/megatron/bridge/recipes/glm5next/bw1300/__init__.py b/src/megatron/bridge/recipes/glm5next/bw1300/__init__.py
 new file mode 100644
-index 0000000..a4ee52920
+index 0000000..58a144f1c
 --- /dev/null
 +++ b/src/megatron/bridge/recipes/glm5next/bw1300/__init__.py
-@@ -0,0 +1,21 @@
+@@ -0,0 +1,22 @@
 +# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
 +# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
 +#
@@ -102,13 +106,14 @@ index 0000000..a4ee52920
 +__all__ = [
 +    "glm53_flash_pretrain_16gpu_bw1300_bf16_test_config",
 +    "glm53_flash_sft_32gpu_bw1101_bf16_test_config",
++    "glm53_flash_peft_32gpu_bw1101_bf16_config",
 +]
 diff --git a/src/megatron/bridge/recipes/glm5next/bw1300/glm53_flash.py b/src/megatron/bridge/recipes/glm5next/bw1300/glm53_flash.py
 new file mode 100644
-index 0000000..475ed20ff
+index 0000000..b7ccc930d
 --- /dev/null
 +++ b/src/megatron/bridge/recipes/glm5next/bw1300/glm53_flash.py
-@@ -0,0 +1,281 @@
+@@ -0,0 +1,390 @@
 +# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
 +# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
 +# Modified by Hygon Information Technology Co., Ltd., 2026.
@@ -129,8 +134,9 @@ index 0000000..475ed20ff
 +from __future__ import annotations
 +
 +from megatron.bridge import AutoBridge
-+from megatron.bridge.recipes.common import _pretrain_common, _sft_common
-+from megatron.bridge.recipes.utils.dataset_utils import default_tulu3_config
++from megatron.bridge.models.glm_moe_dsa.glm5_provider import split_glm_pattern
++from megatron.bridge.recipes.common import _peft_common, _pretrain_common, _sft_common
++from megatron.bridge.recipes.utils.dataset_utils import default_peft_config, default_tulu3_config
 +from megatron.bridge.recipes.utils.environment_utils import COMMON_RECIPE_ENV_VARS
 +from megatron.bridge.recipes.utils.optimizer_utils import distributed_fused_adam_with_cosine_annealing
 +from megatron.bridge.training.config import ConfigContainer
@@ -386,11 +392,118 @@ index 0000000..475ed20ff
 +    return cfg
 +
 +
++def glm53_flash_peft_32gpu_bw1101_bf16_config() -> ConfigContainer:
++    """GLM-5.3-Flash PEFT on 32 BW1101 GPUs with the full 90-layer model."""
++    cfg = _peft_common()
++
++    cfg.model = AutoBridge.from_hf_pretrained(_GLM53_MODEL_ID).get_model_config()
++    cfg.tokenizer.tokenizer_model = _GLM53_MODEL_ID
++
++    cfg.model.seq_length = 4096
++    cfg.model.tensor_model_parallel_size = 1
++    cfg.model.pipeline_model_parallel_size = 4
++    cfg.model.virtual_pipeline_model_parallel_size = None
++    cfg.model.pipeline_model_parallel_layout = None
++    cfg.model.context_parallel_size = 1
++    cfg.model.expert_model_parallel_size = 8
++    cfg.model.expert_tensor_parallel_size = 1
++    cfg.model.sequence_parallel = False
++    cfg.model.num_layers_in_first_pipeline_stage = None
++    cfg.model.num_layers_in_last_pipeline_stage = None
++    cfg.model.account_for_embedding_in_pipeline_split = False
++    cfg.model.account_for_loss_in_pipeline_split = False
++    cfg.model.microbatch_group_size_per_vp_stage = 6
++
++    cfg.model.dsa_kernel_backend = "cudnn"
++    cfg.model.mtp_num_layers = 1
++    cfg.model.calculate_per_token_loss = True
++    cfg.model.cross_entropy_loss_fusion = False
++    cfg.model.cross_entropy_fusion_impl = "native"
++    cfg.model.gradient_accumulation_fusion = True
++    cfg.model.moe_token_dispatcher_type = "alltoall"
++    cfg.model.moe_flex_dispatcher_backend = None
++    cfg.model.moe_shared_expert_overlap = False
++    cfg.model.moe_router_force_load_balancing = False
++    cfg.model.persist_layer_norm = True
++    cfg.model.bias_dropout_fusion = True
++    cfg.model.bias_activation_fusion = True
++    cfg.model.apply_rope_fusion = False
++    # The fused mHC kernels require the unfused defaults for these two switches; the
++    # GLM-5.3-Flash bridge hardcodes both to True, so override them here. This trades
++    # reference numerics (eps moves outside sqrt, mappings stay bf16) for fused kernels.
++    cfg.model.use_fused_mhc = True
++    cfg.model.mhc_keep_mappings_in_fp32 = False
++    cfg.model.mhc_norm_eps_inside_sqrt = False
++    cfg.model.recompute_granularity = None
++    cfg.model.recompute_method = None
++    cfg.model.recompute_num_layers = None
++
++    cfg.mixed_precision = bf16_mixed()
++    cfg.ddp.average_in_collective = False
++    cfg.ddp.use_distributed_optimizer = True
++    cfg.ddp.overlap_grad_reduce = False
++    cfg.ddp.overlap_param_gather = False
++
++    cfg.train.micro_batch_size = 1
++    cfg.train.manual_gc = True
++    cfg.train.manual_gc_interval = 10
++    cfg.validation.eval_iters = 0
++    cfg.validation.eval_interval = 0
++    cfg.logger.log_interval = 1
++
++    peft_scheme = "lora"
++    peft_cfg = default_peft_config(peft_scheme)
++    if isinstance(peft_scheme, str) and peft_scheme.lower() in {"lora", "dora"}:
++        peft_cfg.dim = 8
++        peft_cfg.alpha = 16
++        peft_cfg.dropout = 0.0
++        peft_cfg.target_modules = [
++            "linear_q_down_proj",
++            "linear_q_up_proj",
++            "linear_kv_down_proj",
++            "linear_kv_up_proj",
++            "linear_proj",
++        ]
++    cfg.peft = peft_cfg
++
++    cfg.dataset = default_tulu3_config(
++        seq_length=cfg.model.seq_length,
++        enable_offline_packing=True,
++        pad_seq_to_mult=4,
++    )
++    cfg.dataset.hf_dataset.split = "train[:10000]"
++    cfg.dataset.hf_dataset.load_kwargs = {"revision": _TULU3_REVISION}
++    cfg.dataset.hf_output_root = f"work/data/glm5-3-flash/tulu3-peft-gb200"
++    cfg.dataset.hf_rewrite = False
++    cfg.dataset.hf_validation_proportion = None
++    cfg.dataset.max_train_samples = 10000
++    cfg.dataset.seed = 1234
++    cfg.dataset.do_validation = False
++    cfg.dataset.do_test = False
++    cfg.dataset.offline_packing_specs.max_single_sequence_length = cfg.model.seq_length - 4
++
++    cfg.rng.seed = 5678
++    cfg.train.train_iters = 100
++    cfg.train.global_batch_size = 32
++    cfg.optimizer, cfg.scheduler = distributed_fused_adam_with_cosine_annealing(
++        lr_warmup_iters=10,
++        max_lr=1e-4,
++        min_lr=0.0,
++    )
++    cfg.scheduler.lr_decay_iters = 100
++    cfg.checkpoint.save_interval = 100
++    cfg.checkpoint.load = None
++    block_counts = [11, 12, 12, 10]
++    cfg.model.hybrid_layer_pattern = split_glm_pattern(cfg.model.hybrid_layer_pattern, block_counts)
++    cfg.env_vars = {**COMMON_RECIPE_ENV_VARS}
++    return cfg
++
++
 +__all__ = [
 +    "glm53_flash_pretrain_16gpu_bw1300_bf16_test_config",
 +    "glm53_flash_sft_32gpu_bw1101_bf16_test_config",
++    "glm53_flash_peft_32gpu_bw1101_bf16_config",
 +]
-
 diff --git a/src/megatron/bridge/models/glm5next/glm53flash_bridge.py b/src/megatron/bridge/models/glm5next/glm53flash_bridge.py
 index fbf97a17..3a3ecca8 100644
 --- a/src/megatron/bridge/models/glm5next/glm53flash_bridge.py
