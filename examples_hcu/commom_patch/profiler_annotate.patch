@@ -1,0 +1,203 @@
+diff --git a/scripts/training/run_recipe.py b/scripts/training/run_recipe.py
+index 2e9457f..cf160d7 100755
+--- a/scripts/training/run_recipe.py
++++ b/scripts/training/run_recipe.py
+@@ -515,6 +515,10 @@ def parse_args(argv: list[str] | None = None) -> tuple[argparse.Namespace, list[
+ 
+ def main(argv: list[str] | None = None) -> None:
+     """Load, configure, and execute one library or benchmark recipe."""
++    # HCU: name mHC/DSA kernels in profiler traces (free when not profiling).
++    from megatron.bridge.profiler_annotate import install as install_profiler_annotations
++
++    install_profiler_annotations()
+     # NeMo-Run executes container tasks from its private /nemo_run/code
+     # directory. Resolve user-facing relative dataset, checkpoint, cache, and
+     # logger paths from the mounted Bridge checkout instead.
+diff --git a/src/megatron/bridge/profiler_annotate.py b/src/megatron/bridge/profiler_annotate.py
+new file mode 100644
+index 0000000..854e82d
+--- /dev/null
++++ b/src/megatron/bridge/profiler_annotate.py
+@@ -0,0 +1,182 @@
++# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
++# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
++#
++# Licensed under the Apache License, Version 2.0 (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy of the License at
++#
++#     http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++
++"""Name mHC / DSA / fp8 GEMM kernels in PyTorch profiler traces.
++
++Most of the mHC, sparse-attention and fp8 work is a handful of anonymous CUDA
++launches per layer.  Wrapping the entries below in
++``torch.profiler.record_function`` turns them into named ranges, so a trace shows
++``HyperConnection::native_sinkhorn``, ``TE::gemm`` or ``TE::quantize`` and the
++cost of each backend (native / triton / cutile / hip, bf16 / fp8) can be
++compared directly.
++
++The TE entries are the same entry points for bf16 and fp8, so an fp8 run and a
++bf16 run can be diffed range by range; ``TE::quantize`` / ``TE::split_quantize``
++only show up when an fp8 recipe is active.  The TE ranges carry a ``::forward`` /
++``::backward`` suffix (an autograd node is on the stack during backward), so
++forward and backward GEMM cost can be told apart.
++
++Outside a profiling window the wrapper only forwards the call, so the cost is
++one python call per annotated entry.
++"""
++
++from __future__ import annotations
++
++import functools
++import importlib
++import sys
++
++import torch
++from torch.autograd import profiler as _profiler
++
++_HC = "megatron.core.transformer.hyper_connection"
++_MHC = "megatron.core.fusions.fused_mhc_kernels"
++_CSA = "megatron.core.transformer.experimental_attention_variant.csa"
++_CSA_FUSED = "megatron.core.transformer.experimental_attention_variant.csa_utils.fused_sparse_attention"
++_TE_GEMM = "transformer_engine.pytorch.cpp_extensions.gemm"
++_TE_TORCH = "transformer_engine_torch"
++
++
++def _phase() -> str:
++    """Return ``forward`` or ``backward``; the backward pass runs with an autograd node on the stack."""
++    try:
++        return "backward" if torch._C._current_autograd_node() is not None else "forward"
++    except AttributeError:  # torch build without the private probe
++        return "forward"
++
++
++def _phased(base: str):
++    """Return a label callable that appends ``::forward`` / ``::backward`` to ``base``."""
++    return lambda *args, **kwargs: f"{base}::{_phase()}"
++
++
++# dotted path of the callable -> range name shown in the trace
++_TARGETS = {
++    # mHC, native torch implementation
++    f"{_HC}.SinkhornKnopp.forward": "HyperConnection::native_sinkhorn_forward",
++    f"{_HC}.SinkhornKnopp.backward": "HyperConnection::native_sinkhorn_backward",
++    f"{_HC}.native_h_aggregate": "HyperConnection::native_h_aggregate",
++    f"{_HC}.native_h_post_bda": "HyperConnection::native_h_post_bda",
++    f"{_HC}.HyperConnectionModule._projection_and_get_norm": "HyperConnection::projection_and_get_norm",
++    f"{_HC}.HyperConnectionModule._compute_h": "HyperConnection::compute_h",
++    f"{_MHC}._torch_h_aggregate_bwd": "HyperConnection::torch_h_aggregate_bwd",
++    f"{_MHC}._torch_h_post_bda_bwd": "HyperConnection::torch_h_post_bda_bwd",
++    f"{_MHC}._torch_proj_rms_compute_h": "HyperConnection::torch_proj_rms_compute_h",
++    # mHC, fused hip kernels (package only present on HIP builds)
++    "fused_mhc.FusedSinkhorn.forward": "HipFusedSinkhorn::forward",
++    "fused_mhc.FusedSinkhorn.backward": "HipFusedSinkhorn::backward",
++    "fused_mhc.FusedHAggregate.forward": "HipFusedHAggregate::forward",
++    "fused_mhc.FusedHAggregate.backward": "HipFusedHAggregate::backward",
++    "fused_mhc.FusedHPostBDA.forward": "HipFusedHPostBDA::forward",
++    "fused_mhc.FusedHPostBDA.backward": "HipFusedHPostBDA::backward",
++    "fused_mhc.FusedProjRmsComputeH.forward": "HipFusedProjRmsComputeH::forward",
++    "fused_mhc.FusedProjRmsComputeH.backward": "HipFusedProjRmsComputeH::backward",
++    # mHC, fused triton kernels (module attributes exist only with triton)
++    f"{_MHC}._triton_sinkhorn_fwd": "TritonFusedSinkhorn::forward",
++    f"{_MHC}._triton_sinkhorn_bwd": "TritonFusedSinkhorn::backward",
++    f"{_MHC}._triton_h_aggregate_fwd": "TritonFusedHAggregate::forward",
++    f"{_MHC}._triton_h_post_bda_fwd": "TritonFusedHPostBDA::forward",
++    f"{_MHC}._triton_h_post_bda_bwd": "TritonFusedHPostBDA::backward",
++    # mHC, fused cutile kernels (module attributes exist only with cutile)
++    f"{_MHC}._cutile_sinkhorn_fwd": "CutileFusedSinkhorn::forward",
++    f"{_MHC}._cutile_sinkhorn_bwd": "CutileFusedSinkhorn::backward",
++    f"{_MHC}._cutile_h_aggregate_fwd": "CutileFusedHAggregate::forward",
++    f"{_MHC}._cutile_h_aggregate_bwd": "CutileFusedHAggregate::backward",
++    f"{_MHC}._cutile_h_post_bda_fwd": "CutileFusedHPostBDA::forward",
++    f"{_MHC}._cutile_h_post_bda_bwd": "CutileFusedHPostBDA::backward",
++    f"{_MHC}._cutile_proj_rms_compute_h_fwd": "CutileFusedProjRmsComputeH::forward",
++    f"{_MHC}._cutile_fused_compute_h_proj_rms_bwd": "CutileFusedProjRmsComputeH::backward",
++    # sparse attention: unfused fallback
++    f"{_CSA}.unfused_compressed_sparse_attn": "CompressedSparseAttention::unfused_compressed_sparse_attn",
++    # transformer_engine GEMMs: dense linear and MoE grouped linear, plus the fp8 casts;
++    # _phased splits every entry into a ::forward and a ::backward range
++    f"{_TE_GEMM}.general_gemm": _phased("TE::gemm"),
++    f"{_TE_GEMM}.general_grouped_gemm": _phased("TE::grouped_gemm"),
++    f"{_TE_TORCH}.quantize": _phased("TE::quantize"),
++    f"{_TE_TORCH}.split_quantize": _phased("TE::split_quantize"),
++}
++
++# The fused sparse-attention kernels are autograd Functions: annotate both halves.
++for _cls in ("CSASparseAttnFunc", "FusedCSAIndexerSparseAttnFunc"):
++    for _half in ("forward", "backward"):
++        _TARGETS[f"{_CSA_FUSED}.{_cls}.{_half}"] = f"{_cls}::fused_compressed_sparse_attn_{_half}"
++
++_installed = False
++
++
++def _record(label):
++    """Return a decorator that brackets a call in a profiler range.
++
++    ``label`` is either a fixed range name or a callable returning one, so a
++    target can name its range per call (``_phased`` uses that for forward/backward).
++    """
++
++    def decorate(func):
++        @functools.wraps(func)
++        def wrapper(*args, **kwargs):
++            if not _profiler._is_profiler_enabled:
++                return func(*args, **kwargs)
++            name = label(*args, **kwargs) if callable(label) else label
++            with torch.profiler.record_function(name):
++                return func(*args, **kwargs)
++
++        return wrapper
++
++    return decorate
++
++
++def _split(path: str) -> tuple[object, str]:
++    """Return ``(owner, attribute)`` for a dotted path such as ``pkg.mod.Class.fn``."""
++    parts = path.split(".")
++    for i in range(len(parts) - 1, 0, -1):
++        try:
++            owner = importlib.import_module(".".join(parts[:i]))
++        except ImportError:
++            continue
++        for name in parts[i:-1]:
++            owner = getattr(owner, name)
++        return owner, parts[-1]
++    raise ImportError(path)
++
++
++def _rebind_aliases(attr: str, original, annotated) -> None:
++    """Rebind ``attr`` in modules that did ``from x import attr`` before the patch."""
++    for module in list(sys.modules.values()):
++        try:
++            if vars(module).get(attr) is original:
++                setattr(module, attr, annotated)
++        except TypeError:  # sys.modules may hold None or objects without __dict__
++            continue
++
++
++def install() -> None:
++    """Annotate every target that exists on this install; safe to call twice."""
++    global _installed
++    if _installed:
++        return
++    _installed = True
++
++    for path, label in _TARGETS.items():
++        try:
++            owner, attr = _split(path)
++            raw = vars(owner).get(attr)
++            # wrap the plain function, so classmethod/staticmethod binding is preserved below
++            func = raw.__func__ if isinstance(raw, (staticmethod, classmethod)) else getattr(owner, attr)
++            annotated = _record(label)(func)
++        except (ImportError, AttributeError):
++            # backend not installed or kernel compiled out: nothing to annotate
++            continue
++        setattr(owner, attr, type(raw)(annotated) if isinstance(raw, (staticmethod, classmethod)) else annotated)
++        _rebind_aliases(attr, func, annotated)
