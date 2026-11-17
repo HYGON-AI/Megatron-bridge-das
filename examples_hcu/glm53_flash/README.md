@@ -97,7 +97,7 @@ python3 examples_hcu/data_preparation/prepare_wikitext103.py --parquet-dir /work
 
 ### 2.2 sft、peft
 
-数据集下载
+#### 数据集下载
 ```python
 hf download allenai/tulu-3-sft-mixture --repo-type=dataset --local-dir=/workspace/tulu-3-sft-mixture
 ```
