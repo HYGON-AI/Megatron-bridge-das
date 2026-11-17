@@ -3,6 +3,7 @@
 ## Supported
 | Hardware | Recipe | Precision and optimizer |
 |----------|--------|-------------------------|
+| BW1101, 32 GPUs | `deepseek_v4_flash_pretrain_32gpu_bw1101_bf16_test_config` | BF16 Adam |
 | BW1101, 32 GPUs | `deepseek_v4_flash_sft_32gpu_bw1101_bf16_test_config` | BF16 Adam |
 | BW1101, 32 GPUs | `deepseek_v4_flash_peft_32gpu_bw1101_bf16_config` | BF16 Adam |
 
@@ -50,11 +51,36 @@ cd /workspace/Megatron-bridge-das
 pip install -r examples_hcu/requirements.txt
 ```
 
-## 2、数据处理(pretrain不需要)
+## 2、数据处理
 
-### 2.1 数据集下载
+### 2.1 pretrain
 
-以OpenMathInstruct-2数据集为例
+#### 数据集下载
+```python
+cd /workspace
+hf download NeelNanda/pile-10k --repo-type=dataset --local-dir pile-10k
+hf download openai-community/gpt2 config.json tokenizer.json tokenizer_config.json --local-dir ./gpt2
+```
+或
+[点击下载](https://huggingface.co/datasets/NeelNanda/pile-10k/tree/main)数据集。
+
+假设下载后文件目录如下
+```
+├── data
+│   └── train-00000-of-00001-4746b8785c874cc7.parquet
+├── dataset_infos.json
+└── README.md
+```
+
+#### 数据集处理
+```python
+cd /workspace/Megatron-bridge-das
+python3 examples_hcu/data_preparation/prepare_pile10k.py --stage all --parquet /workspace/pile-10k/data/train-00000-of-00001-4746b8785c874cc7.parquet --output-dir /workspace/the-pile --tokenizer-type HuggingFaceTokenizer --tokenizer-model /workspace/gpt2 --workers 32
+```
+
+### 2.2 sft、peft
+
+#### 数据集下载
 ```python
 modelscope download --dataset AI-ModelScope/OpenMathInstruct-2 --local_dir ./OpenMathInstruct-2
 ```
@@ -62,7 +88,6 @@ modelscope download --dataset AI-ModelScope/OpenMathInstruct-2 --local_dir ./Ope
 [点击下载](https://www.modelscope.cn/datasets/AI-ModelScope/OpenMathInstruct-2/files)数据集。
 
 假设下载后文件目录如下
-
 ```
 OpenMathInstruct-2
 ├── data
@@ -70,7 +95,6 @@ OpenMathInstruct-2
 ├── README.md
 ├── scaling_plot.jpg
 └── SFT Data Diagram 1.jpg
-
 ```
 
 ## 3、模型准备
@@ -101,6 +125,24 @@ modelscope download --model deepseek-ai/DeepSeek-V4-Flash --local_dir ./DeepSeek
 可以填写节点ip或者节点主机名。
 
 （2）根据任务填写脚本变量并执行
+
+#### pretrain
+```shell
+docker exec -it "your container name" bash
+cd /workspace/Megatron-bridge-das/examples_hcu/deepseekv4_flash
+
+PORT=${PORT:-12345} # Set the SSH port by running /usr/sbin/sshd -p <port> inside the Docker container on each node. For example: /usr/sbin/sshd -p 12345
+DATA_PATH=${DATA_PATH:-/path/to/the-pile}
+export LOCAL_HF_PATH=${LOCAL_HF_PATH:-/path/to/DeepSeek-V4-Flash}
+
+./train_deepseekv4_flash_pretrain.sh <RECIPE> <MODE> [HOSTFILE] [NODES]
+
+RECIPE: SUPPORTED_RECIPES in train_deepseekv4_flash_pretrain.sh
+MODE: dryrun or train # 配置dryrun时不需要再跟HOSTFILE和NODES参数
+HOSTFILE: path to hostfile
+NODES: The number of nodes you use
+
+```
 
 #### sft
 ```shell
