@@ -4,6 +4,7 @@
 | Hardware | Recipe | Precision and optimizer |
 |----------|--------|-------------------------|
 | BW1101, 32 GPUs | `deepseek_v4_flash_pretrain_32gpu_bw1101_bf16_test_config` | BF16 Adam |
+| BW1101, 32 GPUs | `deepseek_v4_flash_pretrain_32gpu_bw1101_bf16_muon_test_config` | BF16 Muon |
 | BW1101, 32 GPUs | `deepseek_v4_flash_sft_32gpu_bw1101_bf16_test_config` | BF16 Adam |
 | BW1101, 32 GPUs | `deepseek_v4_flash_peft_32gpu_bw1101_bf16_config` | BF16 Adam |
 
