@@ -16,7 +16,7 @@ RECIPE=${1:-}
 MODE=${2:-}
 HOSTFILE=${3:-}
 NODES=${4:-}
-PROFILING=""
+PROFILING="" # If you want to profiling, please set this var to torch
 
 RED="\033[31m"
 YELLOW="\033[33m"

@@ -3,6 +3,7 @@
 ## Supported
 | Hardware | Recipe | Precision and optimizer |
 |----------|--------|-------------------------|
+| BW1101, 32 GPUs | `deepseek_v4_flash_sft_32gpu_bw1101_bf16_test_config` | BF16 Adam |
 | BW1101, 32 GPUs | `deepseek_v4_flash_peft_32gpu_bw1101_bf16_config` | BF16 Adam |
 
 
@@ -100,6 +101,25 @@ modelscope download --model deepseek-ai/DeepSeek-V4-Flash --local_dir ./DeepSeek
 可以填写节点ip或者节点主机名。
 
 （2）根据任务填写脚本变量并执行
+
+#### sft
+```shell
+docker exec -it "your container name" bash
+cd /workspace/Megatron-bridge-das/examples_hcu/deepseekv4_flash
+
+PORT=${PORT:-12345} # Set the SSH port by running /usr/sbin/sshd -p <port> inside the Docker container on each node. For example: /usr/sbin/sshd -p 12345
+DATA_PATH=${DATA_PATH:-/path/to/OpenMathInstruct-2}
+export LOCAL_HF_PATH=${LOCAL_HF_PATH:-/path/to/DeepSeek-V4-Flash}
+export LOCAL_CORE_PATH=${LOCAL_CORE_PATH:-/path/to/DeepSeek-V4-Flash-core}
+
+./train_deepseekv4_flash_sft.sh <RECIPE> <MODE> [HOSTFILE] [NODES]
+
+RECIPE: SUPPORTED_RECIPES in train_deepseekv4_flash_sft.sh
+MODE: dryrun or sft # 配置dryrun时不需要再跟HOSTFILE和NODES参数
+HOSTFILE: path to hostfile
+NODES: The number of nodes you use
+
+```
 
 #### peft
 ```shell
