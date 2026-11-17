@@ -15,10 +15,10 @@ index 2e9457f..cf160d7 100755
      # logger paths from the mounted Bridge checkout instead.
 diff --git a/src/megatron/bridge/profiler_annotate.py b/src/megatron/bridge/profiler_annotate.py
 new file mode 100644
-index 0000000..854e82d
+index 0000000..5eb072b
 --- /dev/null
 +++ b/src/megatron/bridge/profiler_annotate.py
-@@ -0,0 +1,182 @@
+@@ -0,0 +1,193 @@
 +# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
 +# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
 +#
@@ -34,7 +34,7 @@ index 0000000..854e82d
 +# See the License for the specific language governing permissions and
 +# limitations under the License.
 +
-+"""Name mHC / DSA / fp8 GEMM kernels in PyTorch profiler traces.
++"""Name mHC / DSA / KDA / fp8 GEMM kernels in PyTorch profiler traces.
 +
 +Most of the mHC, sparse-attention and fp8 work is a handful of anonymous CUDA
 +launches per layer.  Wrapping the entries below in
@@ -65,6 +65,9 @@ index 0000000..854e82d
 +_HC = "megatron.core.transformer.hyper_connection"
 +_MHC = "megatron.core.fusions.fused_mhc_kernels"
 +_CSA = "megatron.core.transformer.experimental_attention_variant.csa"
++_DSA_CUDNN = "megatron.core.transformer.experimental_attention_variant.dsa_cudnn_kernels"
++_FLA_KDA = "fla.ops.kda.chunk"
++_FLA_NORM = "fla.modules.fused_norm_gate"
 +_CSA_FUSED = "megatron.core.transformer.experimental_attention_variant.csa_utils.fused_sparse_attention"
 +_TE_GEMM = "transformer_engine.pytorch.cpp_extensions.gemm"
 +_TE_TORCH = "transformer_engine_torch"
@@ -121,6 +124,14 @@ index 0000000..854e82d
 +    f"{_MHC}._cutile_fused_compute_h_proj_rms_bwd": "CutileFusedProjRmsComputeH::backward",
 +    # sparse attention: unfused fallback
 +    f"{_CSA}.unfused_compressed_sparse_attn": "CompressedSparseAttention::unfused_compressed_sparse_attn",
++    # sparse attention: fused entry used by GLM-5.3 / DSv4 with precomputed top-k
++    f"{_DSA_CUDNN}.FusedSparseAttentionFunc.forward": "FusedSparseAttentionFunc::forward",
++    f"{_DSA_CUDNN}.FusedSparseAttentionFunc.backward": "FusedSparseAttentionFunc::backward",
++    # KDA linear attention and its gated norm (GLM-5.3, from the fla package)
++    f"{_FLA_KDA}.ChunkKDAFunction.forward": "ChunkKDA::forward",
++    f"{_FLA_KDA}.ChunkKDAFunction.backward": "ChunkKDA::backward",
++    f"{_FLA_NORM}.LayerNormGatedFunction.forward": "LayerNormGated::forward",
++    f"{_FLA_NORM}.LayerNormGatedFunction.backward": "LayerNormGated::backward",
 +    # transformer_engine GEMMs: dense linear and MoE grouped linear, plus the fp8 casts;
 +    # _phased splits every entry into a ::forward and a ::backward range
 +    f"{_TE_GEMM}.general_gemm": _phased("TE::gemm"),
