@@ -27,6 +27,7 @@ RESET="\033[0m"
 SUPPORTED_RECIPES=(
     deepseek_v4_flash_pretrain_32gpu_bw1101_bf16_test_config
     deepseek_v4_flash_pretrain_32gpu_bw1101_bf16_muon_test_config
+    deepseek_v4_flash_pretrain_32gpu_bw1101_fp8sc_test_config
 )
 
 # Validate RECIPE argument
