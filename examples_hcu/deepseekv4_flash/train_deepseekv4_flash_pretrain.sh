@@ -9,7 +9,6 @@ BRIDGE_ENV_SCRIPT="${BRIDGE_ENV_SCRIPT:-${MEGATRON_PATH}/examples_hcu/env.sh}" #
 PORT=${PORT:-12345} # Set the SSH port by running /usr/sbin/sshd -p <port> inside the Docker container on each node. For example: /usr/sbin/sshd -p 12345
 DATA_PATH=${DATA_PATH:-/path/to/the-pile}
 export LOCAL_HF_PATH=${LOCAL_HF_PATH:-/path/to/DeepSeek-V4-Flash}
-export NVTE_USE_HIPBLASLT_GROUPEDGEMM=1
 
 # ===================================== Launch Mode =====================================
 RECIPE=${1:-}
@@ -27,6 +26,7 @@ RESET="\033[0m"
 SUPPORTED_RECIPES=(
     deepseek_v4_flash_pretrain_32gpu_bw1101_bf16_test_config
     deepseek_v4_flash_pretrain_32gpu_bw1101_bf16_muon_test_config
+    deepseek_v4_flash_pretrain_32gpu_bw1101_fp8sc_test_config
 )
 
 # Validate RECIPE argument

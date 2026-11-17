@@ -1,26 +1,28 @@
 diff --git a/src/megatron/bridge/recipes/deepseek/__init__.py b/src/megatron/bridge/recipes/deepseek/__init__.py
-index c1b8a111..2332f9da 100644
+index c1b8a111..4b544769 100644
 --- a/src/megatron/bridge/recipes/deepseek/__init__.py
 +++ b/src/megatron/bridge/recipes/deepseek/__init__.py
-@@ -53,6 +53,12 @@ from .gb300.deepseek_v4 import (
+@@ -53,6 +53,13 @@ from .gb300.deepseek_v4 import (
      deepseek_v4_pro_pretrain_32gpu_gb300_bf16_config,
      deepseek_v4_pro_pretrain_32gpu_gb300_fp8mx_config,
  )
 +from .bw1101.deepseek_v4 import (
 +    deepseek_v4_flash_pretrain_32gpu_bw1101_bf16_test_config,
 +    deepseek_v4_flash_pretrain_32gpu_bw1101_bf16_muon_test_config,
++    deepseek_v4_flash_pretrain_32gpu_bw1101_fp8sc_test_config,
 +    deepseek_v4_flash_sft_32gpu_bw1101_bf16_test_config,
 +    deepseek_v4_flash_peft_32gpu_bw1101_bf16_config,
 +)
  
  
  __all__ = [
-@@ -63,6 +69,10 @@ __all__ = [
+@@ -63,6 +70,11 @@ __all__ = [
      # DeepSeek V4
      "deepseek_v4_flash_peft_openmath_thinking_packed_config",
      "deepseek_v4_flash_peft_openmath_thinking_packed_gb200_config",
 +    "deepseek_v4_flash_pretrain_32gpu_bw1101_bf16_test_config",
 +    "deepseek_v4_flash_pretrain_32gpu_bw1101_bf16_muon_test_config",
++    "deepseek_v4_flash_pretrain_32gpu_bw1101_fp8sc_test_config",
 +    "deepseek_v4_flash_sft_32gpu_bw1101_bf16_test_config",
 +    "deepseek_v4_flash_peft_32gpu_bw1101_bf16_config",
      "deepseek_v4_flash_pretrain_config",
@@ -28,10 +30,10 @@ index c1b8a111..2332f9da 100644
      "deepseek_v4_flash_pretrain_muon_config",
 diff --git a/src/megatron/bridge/recipes/deepseek/bw1101/__init__.py b/src/megatron/bridge/recipes/deepseek/bw1101/__init__.py
 new file mode 100644
-index 0000000..0a8b0fa99
+index 0000000..df3303547
 --- /dev/null
 +++ b/src/megatron/bridge/recipes/deepseek/bw1101/__init__.py
-@@ -0,0 +1,23 @@
+@@ -0,0 +1,24 @@
 +# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
 +# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
 +#
@@ -52,15 +54,16 @@ index 0000000..0a8b0fa99
 +__all__ = [
 +    "deepseek_v4_flash_pretrain_32gpu_bw1101_bf16_test_config",
 +    "deepseek_v4_flash_pretrain_32gpu_bw1101_bf16_muon_test_config",
++    "deepseek_v4_flash_pretrain_32gpu_bw1101_fp8sc_test_config",
 +    "deepseek_v4_flash_sft_32gpu_bw1101_bf16_test_config",
 +    "deepseek_v4_flash_peft_32gpu_bw1101_bf16_config",
 +]
 diff --git a/src/megatron/bridge/recipes/deepseek/bw1101/deepseek_v4.py b/src/megatron/bridge/recipes/deepseek/bw1101/deepseek_v4.py
 new file mode 100644
-index 0000000..cde69a451
+index 0000000..4bab23e71
 --- /dev/null
 +++ b/src/megatron/bridge/recipes/deepseek/bw1101/deepseek_v4.py
-@@ -0,0 +1,91 @@
+@@ -0,0 +1,135 @@
 +# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
 +# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
 +# Modified by Hygon Information Technology Co., Ltd., 2026.
@@ -88,10 +91,12 @@ index 0000000..cde69a451
 +from megatron.bridge.recipes.deepseek import (
 +    deepseek_v4_flash_pretrain_64gpu_gb200_bf16_config,
 +    deepseek_v4_flash_pretrain_64gpu_gb200_bf16_muon_config,
++    deepseek_v4_flash_pretrain_64gpu_gb200_fp8mx_config,
 +    deepseek_v4_flash_sft_openmath_thinking_packed_gb200_config,
 +    deepseek_v4_flash_peft_openmath_thinking_packed_gb200_config,
 +)
 +from megatron.bridge.training.config import ConfigContainer
++from megatron.bridge.training.mixed_precision import bf16_with_fp8_subchannel_scaling_mixed
 +
 +
 +def _deepseek_v4_supports_bw_fused_kernels() -> bool:
@@ -112,6 +117,11 @@ index 0000000..cde69a451
 +    cfg.model.hybrid_layer_pattern = "WEWECEHECEHECEHE"
 +    cfg.model.num_layers = 16
 +    set_deepseek_v4_pipeline_model_parallel_layout(cfg.model)
++
++    cfg.env_vars = {
++        **cfg.env_vars,
++        "NVTE_USE_HIPBLASLT_GROUPEDGEMM": 1,
++    }
 +    return cfg
 +
 +
@@ -124,6 +134,32 @@ index 0000000..cde69a451
 +    cfg.model.hybrid_layer_pattern = "WEWECEHECEHECEHE"
 +    cfg.model.num_layers = 16
 +    set_deepseek_v4_pipeline_model_parallel_layout(cfg.model)
++
++    cfg.env_vars = {
++        **cfg.env_vars,
++        "NVTE_USE_HIPBLASLT_GROUPEDGEMM": 1,
++    }
++    return cfg
++
++
++def deepseek_v4_flash_pretrain_32gpu_bw1101_fp8sc_test_config() -> ConfigContainer:
++    """Return the BW1101-optimized 16-layer pretrain test config."""
++    cfg = deepseek_v4_flash_pretrain_64gpu_gb200_fp8mx_config()
++    cfg.model.use_fused_mhc = _deepseek_v4_supports_bw_fused_kernels()
++    cfg.model.fine_grained_activation_offloading = False
++    cfg.env_vars.pop("NVTE_CPU_OFFLOAD_V1", None)
++    cfg.model.hybrid_layer_pattern = "WEWECEHECEHECEHE"
++    cfg.model.num_layers = 16
++    set_deepseek_v4_pipeline_model_parallel_layout(cfg.model)
++
++    cfg.mixed_precision = bf16_with_fp8_subchannel_scaling_mixed()
++    cfg.model.moe_router_padding_for_fp8 = False
++    cfg.model.quant_recipe = None
++
++    cfg.env_vars = {
++        **cfg.env_vars,
++        "TE_HIPBLASLT_ALGO_SELECTION": 0,
++    }
 +    return cfg
 +
 +
@@ -136,6 +172,11 @@ index 0000000..cde69a451
 +    cfg.model.hybrid_layer_pattern = "WEWECEHECEHECEHECEHECEHECEHECEHE"
 +    cfg.model.num_layers = 32
 +    set_deepseek_v4_pipeline_model_parallel_layout(cfg.model)
++
++    cfg.env_vars = {
++        **cfg.env_vars,
++        "NVTE_USE_HIPBLASLT_GROUPEDGEMM": 1,
++    }
 +    return cfg
 +
 +
@@ -143,12 +184,18 @@ index 0000000..cde69a451
 +    """Return the BW1101-optimized packed OpenMath LoRA config."""
 +    cfg = deepseek_v4_flash_peft_openmath_thinking_packed_gb200_config()
 +    cfg.model.use_fused_mhc = _deepseek_v4_supports_bw_fused_kernels()
++
++    cfg.env_vars = {
++        **cfg.env_vars,
++        "NVTE_USE_HIPBLASLT_GROUPEDGEMM": 1,
++    }
 +    return cfg
 +
 +
 +__all__ = [
 +    "deepseek_v4_flash_pretrain_32gpu_bw1101_bf16_test_config",
 +    "deepseek_v4_flash_pretrain_32gpu_bw1101_bf16_muon_test_config",
++    "deepseek_v4_flash_pretrain_32gpu_bw1101_fp8sc_test_config",
 +    "deepseek_v4_flash_sft_32gpu_bw1101_bf16_test_config",
 +    "deepseek_v4_flash_peft_32gpu_bw1101_bf16_config",
 +]

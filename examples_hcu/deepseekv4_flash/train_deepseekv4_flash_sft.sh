@@ -11,7 +11,6 @@ DATA_PATH=${DATA_PATH:-/path/to/OpenMathInstruct-2}
 export LOCAL_HF_PATH=${LOCAL_HF_PATH:-/path/to/DeepSeek-V4-Flash}
 export LOCAL_CORE_PATH=${LOCAL_CORE_PATH:-/path/to/DeepSeek-V4-Flash-core}
 export NEMO_DATASETS_CACHE=${DATA_PATH}
-export NVTE_USE_HIPBLASLT_GROUPEDGEMM=1
 
 # ===================================== Launch Mode =====================================
 RECIPE=${1:-}
