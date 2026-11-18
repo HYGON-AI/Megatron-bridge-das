@@ -49,9 +49,9 @@ cd /workspace/Megatron-bridge-das
 pip install -r examples_hcu/requirements.txt
 ```
 
-## 2、数据处理
+## 2、数据处理（pretrain不需要）
 
-### 2.1 peft
+### 2.1 sft、peft
 
 #### 数据集下载
 ```python
@@ -107,6 +107,41 @@ modelscope download --model Qwen/Qwen3.8-27B --local_dir ./Qwen3.8-27B
 可以填写节点ip或者节点主机名。
 
 （2）根据任务填写脚本变量并执行
+
+#### pretrain
+```shell
+docker exec -it "your container name" bash
+cd /workspace/Megatron-bridge-das/examples_hcu/qwen38_27b
+
+PORT=${PORT:-12345} # Set the SSH port by running /usr/sbin/sshd -p <port> inside the Docker container on each node. For example: /usr/sbin/sshd -p 12345
+export LOCAL_HF_PATH=${LOCAL_HF_PATH:-/path/to/Qwen3.8-27B}
+export LOCAL_CORE_PATH=${LOCAL_CORE_PATH:-/path/to/Qwen3.8-27B-core}
+
+./train_qwen38_27b_pretrain.sh <RECIPE> <MODE> [HOSTFILE] [NODES]
+
+RECIPE: SUPPORTED_RECIPES in train_qwen38_27b_pretrain.sh
+MODE: dryrun or train # 配置dryrun时不需要再跟HOSTFILE和NODES参数
+HOSTFILE: path to hostfile
+NODES: The number of nodes you use
+```
+
+#### sft
+```shell
+docker exec -it "your container name" bash
+cd /workspace/Megatron-bridge-das/examples_hcu/qwen38_27b
+
+PORT=${PORT:-12345} # Set the SSH port by running /usr/sbin/sshd -p <port> inside the Docker container on each node. For example: /usr/sbin/sshd -p 12345
+DATA_PATH=${DATA_PATH:-/path/to/MedPix-VQA}
+export LOCAL_HF_PATH=${LOCAL_HF_PATH:-/path/to/Qwen3.8-27B}
+export LOCAL_CORE_PATH=${LOCAL_CORE_PATH:-/path/to/Qwen3.8-27B-core}
+
+./train_qwen38_27b_sft.sh <RECIPE> <MODE> [HOSTFILE] [NODES]
+
+RECIPE: SUPPORTED_RECIPES in train_qwen38_27b_sft.sh
+MODE: dryrun or sft # 配置dryrun时不需要再跟HOSTFILE和NODES参数
+HOSTFILE: path to hostfile
+NODES: The number of nodes you use
+```
 
 #### peft
 ```shell
