@@ -3,6 +3,8 @@
 ## Supported
 | Hardware | Recipe | Precision and optimizer |
 |----------|--------|-------------------------|
+| BW1101, 32 GPUs | `qwen35_vl_27b_pretrain_32gpu_bw1101_bf16_mock_config` | BF16 Adam |
+| BW1101, 16 GPUs | `qwen35_vl_27b_sft_16gpu_bw1101_bf16_config` | BF16 Adam |
 | BW1101, 4 GPUs | `qwen35_vl_27b_peft_4gpu_bw1101_bf16_config` | BF16 Adam |
 
 
