@@ -1,7 +1,8 @@
 diff --git a/src/megatron/bridge/recipes/__init__.py b/src/megatron/bridge/recipes/__init__.py
+index c745255..c5cba8e 100644
 --- a/src/megatron/bridge/recipes/__init__.py
 +++ b/src/megatron/bridge/recipes/__init__.py
-@@ -38,8 +38,9 @@
+@@ -37,6 +37,7 @@ from megatron.bridge.recipes.gemma4_vl import *
  from megatron.bridge.recipes.gemma4_vl.h100 import *
  from megatron.bridge.recipes.glm import *
  from megatron.bridge.recipes.glm.h100 import *
@@ -9,14 +10,12 @@ diff --git a/src/megatron/bridge/recipes/__init__.py b/src/megatron/bridge/recip
  from megatron.bridge.recipes.glm_vl import *
  from megatron.bridge.recipes.glm_vl.h100 import *
  from megatron.bridge.recipes.gpt import *
- from megatron.bridge.recipes.gpt.h100 import *
- from megatron.bridge.recipes.gpt_oss import *
 diff --git a/src/megatron/bridge/recipes/glm5next/__init__.py b/src/megatron/bridge/recipes/glm5next/__init__.py
 new file mode 100644
-index 0000000..f9d43d570
+index 0000000..0e243d0
 --- /dev/null
 +++ b/src/megatron/bridge/recipes/glm5next/__init__.py
-@@ -0,0 +1,26 @@
+@@ -0,0 +1,32 @@
 +# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
 +# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
 +#
@@ -32,88 +31,29 @@ index 0000000..f9d43d570
 +# See the License for the specific language governing permissions and
 +# limitations under the License.
 +from .glm53_flash import (
++    glm53_flash_pretrain_16gpu_bw1101_bf16_test_config,
 +    glm53_flash_pretrain_16gpu_bw1300_bf16_test_config,
-+    glm53_flash_sft_32gpu_bw1101_bf16_test_config,
++    glm53_flash_sft_16gpu_bw1101_bf16_test_config,
++    glm53_flash_sft_16gpu_bw1300_bf16_test_config,
 +    glm53_flash_peft_32gpu_bw1101_bf16_config,
++    glm53_flash_peft_32gpu_bw1300_bf16_config,
 +)
 +
 +
 +__all__ = [
++    "glm53_flash_pretrain_16gpu_bw1101_bf16_test_config",
 +    "glm53_flash_pretrain_16gpu_bw1300_bf16_test_config",
-+    "glm53_flash_sft_32gpu_bw1101_bf16_test_config",
++    "glm53_flash_sft_16gpu_bw1101_bf16_test_config",
++    "glm53_flash_sft_16gpu_bw1300_bf16_test_config",
 +    "glm53_flash_peft_32gpu_bw1101_bf16_config",
++    "glm53_flash_peft_32gpu_bw1300_bf16_config",
 +]
-diff --git a/src/megatron/bridge/recipes/glm5next/glm53_flash.py b/src/megatron/bridge/recipes/glm5next/glm53_flash.py
+diff --git a/src/megatron/bridge/recipes/glm5next/bw1101/__init__.py b/src/megatron/bridge/recipes/glm5next/bw1101/__init__.py
 new file mode 100644
-index 0000000..831cb14c4
+index 0000000..c9d87c2
 --- /dev/null
-+++ b/src/megatron/bridge/recipes/glm5next/glm53_flash.py
-@@ -0,0 +1,31 @@
-+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
-+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
-+#
-+# Licensed under the Apache License, Version 2.0 (the "License");
-+# you may not use this file except in compliance with the License.
-+# You may obtain a copy of the License at
-+#
-+#     http://www.apache.org/licenses/LICENSE-2.0
-+#
-+# Unless required by applicable law or agreed to in writing, software
-+# distributed under the License is distributed on an "AS IS" BASIS,
-+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-+# See the License for the specific language governing permissions and
-+# limitations under the License.
-+# ruff: noqa: F401
-+"""Compatibility aliases for GLM-5.3-Flash recipe names."""
-+
-+from __future__ import annotations
-+
-+from megatron.bridge.recipes.glm5next.bw1300.glm53_flash import (
-+    glm53_flash_pretrain_16gpu_bw1300_bf16_test_config,
-+    glm53_flash_sft_32gpu_bw1101_bf16_test_config,
-+    glm53_flash_peft_32gpu_bw1101_bf16_config,
-+)
-+
-+
-+__all__ = [
-+    "glm53_flash_pretrain_16gpu_bw1300_bf16_test_config",
-+    "glm53_flash_sft_32gpu_bw1101_bf16_test_config",
-+    "glm53_flash_peft_32gpu_bw1101_bf16_config",
-+]
-diff --git a/src/megatron/bridge/recipes/glm5next/bw1300/__init__.py b/src/megatron/bridge/recipes/glm5next/bw1300/__init__.py
-new file mode 100644
-index 0000000..58a144f1c
---- /dev/null
-+++ b/src/megatron/bridge/recipes/glm5next/bw1300/__init__.py
-@@ -0,0 +1,22 @@
-+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
-+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
-+#
-+# Licensed under the Apache License, Version 2.0 (the "License");
-+# you may not use this file except in compliance with the License.
-+# You may obtain a copy of the License at
-+#
-+#     http://www.apache.org/licenses/LICENSE-2.0
-+#
-+# Unless required by applicable law or agreed to in writing, software
-+# distributed under the License is distributed on an "AS IS" BASIS,
-+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-+# See the License for the specific language governing permissions and
-+# limitations under the License.
-+from megatron.bridge.recipes.glm5next.bw1300.glm53_flash import *  # noqa: F403
-+
-+
-+__all__ = [
-+    "glm53_flash_pretrain_16gpu_bw1300_bf16_test_config",
-+    "glm53_flash_sft_32gpu_bw1101_bf16_test_config",
-+    "glm53_flash_peft_32gpu_bw1101_bf16_config",
-+]
-diff --git a/src/megatron/bridge/recipes/glm5next/bw1300/glm53_flash.py b/src/megatron/bridge/recipes/glm5next/bw1300/glm53_flash.py
-new file mode 100644
-index 0000000..b7ccc930d
---- /dev/null
-+++ b/src/megatron/bridge/recipes/glm5next/bw1300/glm53_flash.py
-@@ -0,0 +1,390 @@
++++ b/src/megatron/bridge/recipes/glm5next/bw1101/__init__.py
+@@ -0,0 +1,23 @@
 +# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
 +# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
 +# Modified by Hygon Information Technology Co., Ltd., 2026.
@@ -129,7 +69,36 @@ index 0000000..b7ccc930d
 +# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 +# See the License for the specific language governing permissions and
 +# limitations under the License.
-+"""BW1300 recipes for GLM-5.3-Flash."""
++from megatron.bridge.recipes.glm5next.bw1101.glm53_flash import *  # noqa: F403
++
++
++__all__ = [
++    "glm53_flash_pretrain_16gpu_bw1101_bf16_test_config",
++    "glm53_flash_sft_16gpu_bw1101_bf16_test_config",
++    "glm53_flash_peft_32gpu_bw1101_bf16_config",
++]
+diff --git a/src/megatron/bridge/recipes/glm5next/bw1101/glm53_flash.py b/src/megatron/bridge/recipes/glm5next/bw1101/glm53_flash.py
+new file mode 100644
+index 0000000..d6547e8
+--- /dev/null
++++ b/src/megatron/bridge/recipes/glm5next/bw1101/glm53_flash.py
+@@ -0,0 +1,394 @@
++# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
++# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
++# Modified by Hygon Information Technology Co., Ltd., 2026.
++#
++# Licensed under the Apache License, Version 2.0 (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy of the License at
++#
++#     http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++"""BW1101 recipes for GLM-5.3-Flash."""
 +
 +from __future__ import annotations
 +
@@ -147,8 +116,8 @@ index 0000000..b7ccc930d
 +_TULU3_REVISION = "b14afda60f1bbebe55d5d2fa1e4df5042f97f8be"
 +
 +
-+def glm53_flash_pretrain_16gpu_bw1300_bf16_test_config() -> ConfigContainer:
-+    """GLM-5.3-Flash bounded pretraining on 16 BW1300 GPUs."""
++def glm53_flash_pretrain_16gpu_bw1101_bf16_test_config() -> ConfigContainer:
++    """GLM-5.3-Flash bounded pretraining on 16 BW1101 GPUs."""
 +    cfg = _pretrain_common()
 +
 +    cfg.model = AutoBridge.from_hf_pretrained(_GLM53_MODEL_ID).get_model_config()
@@ -158,9 +127,9 @@ index 0000000..b7ccc930d
 +    # are KDA, and the first three blocks are dense while the rest are MoE. Keeping the first
 +    # twelve blocks exercises all four layer types. num_layers and moe_layer_freq must follow
 +    # the pattern: the bridge derives both from the 45-block reference config (90 layers).
-+    cfg.model.hybrid_layer_pattern = "K-K-K-DEKEKEKEDEKEKEKEDE"
-+    cfg.model.num_layers = 24
-+    cfg.model.moe_layer_freq = [0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1]
++    cfg.model.hybrid_layer_pattern = "K-K-K-DEKE"
++    cfg.model.num_layers = 10
++    cfg.model.moe_layer_freq = [0, 0, 0, 0, 0, 0, 0, 1, 0, 1]
 +    # ========== test config ==========
 +
 +    # Text-only pretraining never runs the vision tower. Freezing it (patch_embed, blocks and
@@ -256,13 +225,13 @@ index 0000000..b7ccc930d
 +
 +    cfg.env_vars = {
 +        **COMMON_RECIPE_ENV_VARS,
-+        "DEEP_EP_NORMAL_MNVL": "1",
++        "NVTE_USE_HIPBLASLT_GROUPEDGEMM": 1,
 +    }
 +    return cfg
 +
 +
-+def glm53_flash_sft_32gpu_bw1101_bf16_test_config() -> ConfigContainer:
-+    """GLM-5.3-Flash bounded SFT on 32 BW1101 GPUs."""
++def glm53_flash_sft_16gpu_bw1101_bf16_test_config() -> ConfigContainer:
++    """GLM-5.3-Flash bounded SFT on 16 BW1101 GPUs."""
 +    cfg = _sft_common()
 +
 +    cfg.model = AutoBridge.from_hf_pretrained(_GLM53_MODEL_ID).get_model_config()
@@ -272,9 +241,9 @@ index 0000000..b7ccc930d
 +    # are KDA, and the first three blocks are dense while the rest are MoE. Keeping the first
 +    # twelve blocks exercises all four layer types. num_layers and moe_layer_freq must follow
 +    # the pattern: the bridge derives both from the 45-block reference config (90 layers).
-+    cfg.model.hybrid_layer_pattern = "K-K-K-DEKEKEKEDEKEKEKEDE"
-+    cfg.model.num_layers = 24
-+    cfg.model.moe_layer_freq = [0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1]
++    cfg.model.hybrid_layer_pattern = "K-K-K-DEKE"
++    cfg.model.num_layers = 10
++    cfg.model.moe_layer_freq = [0, 0, 0, 0, 0, 0, 0, 1, 0, 1]
 +    # ========== test config ==========
 +
 +    # Text-only SFT never runs the vision tower. Freezing it (patch_embed, blocks and the
@@ -388,6 +357,7 @@ index 0000000..b7ccc930d
 +        "NVTE_FWD_LAYERNORM_SM_MARGIN": 20,
 +        "TORCH_NCCL_AVOID_RECORD_STREAMS": 1,
 +        "USE_MNNVL": 1,
++        "NVTE_USE_HIPBLASLT_GROUPEDGEMM": 1,
 +    }
 +    return cfg
 +
@@ -495,17 +465,162 @@ index 0000000..b7ccc930d
 +    cfg.checkpoint.load = None
 +    block_counts = [11, 12, 12, 10]
 +    cfg.model.hybrid_layer_pattern = split_glm_pattern(cfg.model.hybrid_layer_pattern, block_counts)
-+    cfg.env_vars = {**COMMON_RECIPE_ENV_VARS}
++    cfg.env_vars = {
++        **COMMON_RECIPE_ENV_VARS,
++        "NVTE_USE_HIPBLASLT_GROUPEDGEMM": 1,
++    }
++    return cfg
++
++
++__all__ = [
++    "glm53_flash_pretrain_16gpu_bw1101_bf16_test_config",
++    "glm53_flash_sft_16gpu_bw1101_bf16_test_config",
++    "glm53_flash_peft_32gpu_bw1101_bf16_config",
++]
+diff --git a/src/megatron/bridge/recipes/glm5next/bw1300/__init__.py b/src/megatron/bridge/recipes/glm5next/bw1300/__init__.py
+new file mode 100644
+index 0000000..b7dee41
+--- /dev/null
++++ b/src/megatron/bridge/recipes/glm5next/bw1300/__init__.py
+@@ -0,0 +1,23 @@
++# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
++# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
++# Modified by Hygon Information Technology Co., Ltd., 2026.
++#
++# Licensed under the Apache License, Version 2.0 (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy of the License at
++#
++#     http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++from megatron.bridge.recipes.glm5next.bw1300.glm53_flash import *  # noqa: F403
++
++
++__all__ = [
++    "glm53_flash_pretrain_16gpu_bw1300_bf16_test_config",
++    "glm53_flash_sft_16gpu_bw1300_bf16_test_config",
++    "glm53_flash_peft_32gpu_bw1300_bf16_config",
++]
+diff --git a/src/megatron/bridge/recipes/glm5next/bw1300/glm53_flash.py b/src/megatron/bridge/recipes/glm5next/bw1300/glm53_flash.py
+new file mode 100644
+index 0000000..afe795b
+--- /dev/null
++++ b/src/megatron/bridge/recipes/glm5next/bw1300/glm53_flash.py
+@@ -0,0 +1,62 @@
++# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
++# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
++# Modified by Hygon Information Technology Co., Ltd., 2026.
++#
++# Licensed under the Apache License, Version 2.0 (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy of the License at
++#
++#     http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++"""BW1300 recipes for GLM-5.3-Flash."""
++
++from __future__ import annotations
++
++from megatron.bridge.recipes.glm5next.glm53_flash import (
++    glm53_flash_pretrain_16gpu_bw1101_bf16_test_config,
++    glm53_flash_sft_16gpu_bw1101_bf16_test_config,
++    glm53_flash_peft_32gpu_bw1101_bf16_config,
++)
++from megatron.bridge.training.config import ConfigContainer
++
++
++def glm53_flash_pretrain_16gpu_bw1300_bf16_test_config() -> ConfigContainer:
++    """GLM-5.3-Flash bounded pretraining on 16 BW1300 GPUs."""
++    cfg = glm53_flash_pretrain_16gpu_bw1101_bf16_test_config()
++    cfg.env_vars = {
++        **cfg.env_vars,
++        "DEEP_EP_NORMAL_MNVL": 1,
++    }
++    return cfg
++
++
++def glm53_flash_sft_16gpu_bw1300_bf16_test_config() -> ConfigContainer:
++    """GLM-5.3-Flash bounded SFT on 16 BW1300 GPUs."""
++    cfg = glm53_flash_sft_16gpu_bw1101_bf16_test_config()
++    cfg.env_vars = {
++        **cfg.env_vars,
++        "DEEP_EP_NORMAL_MNVL": 1,
++    }
++    return cfg
++
++
++def glm53_flash_peft_32gpu_bw1300_bf16_config() -> ConfigContainer:
++    """GLM-5.3-Flash PEFT on 32 BW1300 GPUs with the full 90-layer model."""
++    cfg = glm53_flash_peft_32gpu_bw1101_bf16_config()
++    cfg.env_vars = {
++        **cfg.env_vars,
++        "DEEP_EP_NORMAL_MNVL": 1,
++    }
 +    return cfg
 +
 +
 +__all__ = [
 +    "glm53_flash_pretrain_16gpu_bw1300_bf16_test_config",
-+    "glm53_flash_sft_32gpu_bw1101_bf16_test_config",
++    "glm53_flash_sft_16gpu_bw1300_bf16_test_config",
++    "glm53_flash_peft_32gpu_bw1300_bf16_config",
++]
+diff --git a/src/megatron/bridge/recipes/glm5next/glm53_flash.py b/src/megatron/bridge/recipes/glm5next/glm53_flash.py
+new file mode 100644
+index 0000000..a9629a8
+--- /dev/null
++++ b/src/megatron/bridge/recipes/glm5next/glm53_flash.py
+@@ -0,0 +1,39 @@
++# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
++# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
++#
++# Licensed under the Apache License, Version 2.0 (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy of the License at
++#
++#     http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++# ruff: noqa: F401
++"""Compatibility aliases for GLM-5.3-Flash recipe names."""
++
++from __future__ import annotations
++
++from megatron.bridge.recipes.glm5next.bw1101.glm53_flash import (
++    glm53_flash_pretrain_16gpu_bw1101_bf16_test_config,
++    glm53_flash_sft_16gpu_bw1101_bf16_test_config,
++    glm53_flash_peft_32gpu_bw1101_bf16_config,
++)
++from megatron.bridge.recipes.glm5next.bw1300.glm53_flash import (
++    glm53_flash_pretrain_16gpu_bw1300_bf16_test_config,
++    glm53_flash_sft_16gpu_bw1300_bf16_test_config,
++    glm53_flash_peft_32gpu_bw1300_bf16_config,
++)
++
++
++__all__ = [
++    "glm53_flash_pretrain_16gpu_bw1101_bf16_test_config",
++    "glm53_flash_pretrain_16gpu_bw1300_bf16_test_config",
++    "glm53_flash_sft_16gpu_bw1101_bf16_test_config",
++    "glm53_flash_sft_16gpu_bw1300_bf16_test_config",
 +    "glm53_flash_peft_32gpu_bw1101_bf16_config",
++    "glm53_flash_peft_32gpu_bw1300_bf16_config",
 +]
 diff --git a/src/megatron/bridge/models/glm5next/glm53flash_bridge.py b/src/megatron/bridge/models/glm5next/glm53flash_bridge.py
-index fbf97a17..3a3ecca8 100644
+index fbf97a1..3a3ecca 100644
 --- a/src/megatron/bridge/models/glm5next/glm53flash_bridge.py
 +++ b/src/megatron/bridge/models/glm5next/glm53flash_bridge.py
 @@ -508,6 +508,7 @@ class GLM53FlashModel(MegatronModule):

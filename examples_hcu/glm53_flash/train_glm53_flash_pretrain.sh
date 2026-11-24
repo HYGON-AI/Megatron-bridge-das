@@ -9,7 +9,6 @@ BRIDGE_ENV_SCRIPT="${BRIDGE_ENV_SCRIPT:-${MEGATRON_PATH}/examples_hcu/env.sh}" #
 PORT=${PORT:-12345} # Set the SSH port by running /usr/sbin/sshd -p <port> inside the Docker container on each node. For example: /usr/sbin/sshd -p 12345
 DATA_PATH=${DATA_PATH:-/path/to/wikitext103}
 export LOCAL_HF_PATH=${LOCAL_HF_PATH:-/path/to/GLM-5.3-Flash}
-export NVTE_USE_HIPBLASLT_GROUPEDGEMM=1
 
 # ===================================== Launch Mode =====================================
 RECIPE=${1:-}
@@ -24,6 +23,7 @@ RESET="\033[0m"
 
 # Discover supported recipes from the glm module
 SUPPORTED_RECIPES=(
+    glm53_flash_pretrain_16gpu_bw1101_bf16_test_config
     glm53_flash_pretrain_16gpu_bw1300_bf16_test_config
 )
 
@@ -34,7 +34,7 @@ if [[ -z ${RECIPE} ]]; then
     printf "  - %s\n" "${SUPPORTED_RECIPES[@]}"
     echo ""
     echo "Usage: $0 <RECIPE> <MODE> [HOSTFILE] [NODES]"
-    echo "  MODE: dryrun | train"
+    echo "  MODE: dryrun | pretrain"
     exit 1
 fi
 
@@ -87,7 +87,7 @@ DATA_CONFIG=(
 )
 
 # ===================================== Train Config =====================================
-TRAIN_ITERS=20
+TRAIN_ITERS=100
 GLOBAL_BATCH_SIZE=256
 MICRO_BATCH_SIZE=1
 
@@ -95,7 +95,7 @@ TRAIN_CONFIG=(
     train.train_iters=${TRAIN_ITERS}
     train.global_batch_size=${GLOBAL_BATCH_SIZE}
     train.micro_batch_size=${MICRO_BATCH_SIZE}
-    scheduler.lr_warmup_iters=10
+    scheduler.lr_warmup_iters=$(( TRAIN_ITERS / 10 ))
     scheduler.lr_decay_iters=${TRAIN_ITERS}
     tokenizer.tokenizer_model=${LOCAL_HF_PATH}
     tokenizer.use_tokenizer_vocab_size=false
@@ -132,24 +132,25 @@ MODEL_CONFIG=(
     model.moe_token_dispatcher_type=flex
     model.moe_flex_dispatcher_backend=${MOE_FLEX_DISPATCHER_BACKEND}
     model.moe_flex_dispatcher_num_sms=${MOE_FLEX_DISPATCHER_NUM_SMS}
-    model.cross_entropy_loss_fusion=True
+    model.cross_entropy_loss_fusion=true
     model.cross_entropy_fusion_impl=te
     model.moe_router_fusion=true
     model.moe_permute_fusion=true
 )
 
 # ===================================== Checkpoint & Logging Config =====================================
-SAVE_DIR=${CURRENT_DIR}/${RECIPE}_tp${TP}_pp${PP}_ep${EP}_cp${CP}
+SAVE_DIR=${CURRENT_DIR}/${RECIPE}_tp${TP}_pp${PP}_ep${EP}_etp${ETP}_cp${CP}
 CONFIG_DUMP=${SAVE_DIR}/${RECIPE}.yaml
 
 CKPT_AND_LOGGING_CONFIG=(
+    checkpoint.pretrained_checkpoint=${LOCAL_HF_PATH}
     checkpoint.finetune=false
     checkpoint.load=null
-    checkpoint.load_optim=true
-    checkpoint.load_rng=true
+    checkpoint.load_optim=false
+    checkpoint.load_rng=false
     checkpoint.save=${SAVE_DIR}/ckpt
-    checkpoint.save_optim=true
-    checkpoint.save_rng=true
+    checkpoint.save_optim=false
+    checkpoint.save_rng=false
     checkpoint.save_interval=10
     logger.log_interval=1
     logger.logging_level=40
@@ -168,14 +169,14 @@ PROFILING_CONFIG=(
 )
 
 # ===================================== Summary =====================================
-mkdir -p ${SAVE_DIR}/train_logs
+mkdir -p ${SAVE_DIR}/${MODE}_logs
 echo "======================================"
-echo -e "${YELLOW}GLM-5.3-Flash pretrain${RESET}"
+echo -e "${YELLOW}GLM-5.3-Flash ${MODE}${RESET}"
 echo "======================================"
 echo "Mode:        ${MODE}"
 echo "Recipe:      ${RECIPE}"
 echo "Nodes:       ${NNODES}"
-echo "GPUs:        ${GPUS}/node, ${WORLD_GPUS} total   (TP=${TP}, PP=${PP}, EP=${EP})"
+echo "GPUs:        ${GPUS}/node, ${WORLD_GPUS} total   (TP=${TP}, PP=${PP}, EP=${EP}, ETP=${ETP}, CP=${CP})"
 echo "Iters:       ${TRAIN_ITERS}"
 echo "GBS/MBS:     ${GLOBAL_BATCH_SIZE} / ${MICRO_BATCH_SIZE}"
 echo "Seq length:  ${SEQ_LENGTH}"
@@ -198,18 +199,17 @@ env_args=(
     -x PATH
     -x LD_LIBRARY_PATH
     -x LOCAL_HF_PATH
-    -x NVTE_USE_HIPBLASLT_GROUPEDGEMM
     -x MASTER_ADDR=${MASTER_ADDR}
     -x MASTER_PORT=${MASTER_PORT}
 )
-SAVE_LOG=${SAVE_DIR}/train_logs/mpi_$(date +%F-%H%M).log
+SAVE_LOG=${SAVE_DIR}/${MODE}_logs/mpi_$(date +%F-%H%M).log
 
 case "${MODE}" in
     dryrun)
         source ${BRIDGE_ENV_SCRIPT}
         python ${MEGATRON_PATH}/scripts/training/run_recipe.py \
             --recipe ${RECIPE} \
-            --mode pretrain \
+            --mode ${MODE} \
             --dry-run \
             "${DATA_CONFIG[@]}" \
             "${TRAIN_CONFIG[@]}" \
@@ -222,7 +222,7 @@ case "${MODE}" in
         echo "======================================"
         ;;
 
-    train)
+    pretrain)
         TORCHRUN_ARGS=(
             --nnodes=${NNODES}
             --nproc_per_node=${GPUS}
@@ -232,7 +232,7 @@ case "${MODE}" in
         RECIPE_ARGS=(
             ${MEGATRON_PATH}/scripts/training/run_recipe.py
             --recipe ${RECIPE}
-            --mode pretrain
+            --mode ${MODE}
             --dataset megatron-indexed
             ${DATA_CONFIG[@]}
             ${TRAIN_CONFIG[@]}
@@ -271,7 +271,7 @@ case "${MODE}" in
         ;;
 
     *)
-        echo "ERROR: unknown mode '${MODE}'. Use 'dryrun' or 'train'."
+        echo "ERROR: unknown mode '${MODE}'."
         exit 1
         ;;
 esac
