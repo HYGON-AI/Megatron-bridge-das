@@ -1,0 +1,763 @@
+diff --git a/src/megatron/bridge/models/glm5next/glm53flash_bridge.py b/src/megatron/bridge/models/glm5next/glm53flash_bridge.py
+index fbf97a1..c0e07e3 100644
+--- a/src/megatron/bridge/models/glm5next/glm53flash_bridge.py
++++ b/src/megatron/bridge/models/glm5next/glm53flash_bridge.py
+@@ -31,6 +31,7 @@ import types
+ from collections.abc import Mapping
+ from copy import deepcopy
+ from dataclasses import dataclass
++from functools import partial
+ from typing import TYPE_CHECKING, Any, Callable, Optional
+ 
+ import torch
+@@ -335,12 +336,75 @@ class _EhProjSplitMapping(MegatronParamMapping[torch.Tensor]):
+         return {key: torch.cat(parts, dim=1).contiguous()}
+ 
+ 
++class _MegaMoEHFParams(dict[str, str]):
++    """HF checkpoint names for one packed MegaMoE expert weight."""
++
++
++class _MegaMoEExpertMapping(MegatronParamMapping[Callable[[str], torch.Tensor]]):
++    """Convert per-expert HF projections to and from an EP-local weight tensor."""
++
++    def __init__(self, megatron_param: str, hf_param: dict[str, str]) -> None:
++        super().__init__(megatron_param, _MegaMoEHFParams(hf_param))
++
++    @property
++    def _projections(self) -> tuple[str, ...]:
++        if self.megatron_param.endswith(".fc1_weight.weight"):
++            return ("gate_proj", "up_proj")
++        return ("down_proj",)
++
++    def _experts_per_rank(self, num_experts: int) -> int:
++        expected = len(self.hf_param) // len(self._projections)
++        local_experts, remainder = divmod(num_experts, self.ep_size)
++        if num_experts != expected or not local_experts or remainder:
++            raise ValueError(
++                f"{self.megatron_param}: expected {expected} checkpoint experts, got "
++                f"{num_experts} model experts with EP size {self.ep_size}."
++            )
++        return local_experts
++
++    def hf_to_megatron(
++        self, hf_weights: Callable[[str], torch.Tensor], megatron_module: nn.Module
++    ) -> torch.Tensor:
++        """Load only this EP rank's experts, in global expert order."""
++        local_experts = self._experts_per_rank(megatron_module.config.num_moe_experts)
++        first_expert = self.ep_rank * local_experts
++        projections = self._projections
++        weights = []
++        for expert_id in range(first_expert, first_expert + local_experts):
++            parts = [hf_weights(self.hf_param[f"{projection}.{expert_id}"]) for projection in projections]
++            weights.append(torch.cat(parts, dim=0) if len(parts) > 1 else parts[0])
++        return torch.stack(weights)
++
++    def megatron_to_hf(
++        self, megatron_weights: torch.Tensor | None, megatron_module: nn.Module | None
++    ) -> dict[str, torch.Tensor]:
++        """Gather EP shards and emit the original HF projection names."""
++        local_weights = self.broadcast_from_pp_rank(megatron_weights, cache_key=self.megatron_param)
++        if local_weights is None:
++            return {}
++        local_weights = self.maybe_dequantize(local_weights)
++        self._experts_per_rank(local_weights.size(0) * self.ep_size)
++        shards = [local_weights]
++        if self.ep_size > 1:
++            shards = [torch.empty_like(local_weights) for _ in range(self.ep_size)]
++            torch.distributed.all_gather(shards, local_weights, group=self.ep_group)
++
++        projections = self._projections
++        weights = {}
++        for ep_rank, shard in enumerate(shards):
++            for local_index, expert_weight in enumerate(shard):
++                expert_id = ep_rank * local_weights.size(0) + local_index
++                for projection, weight in zip(projections, expert_weight.chunk(len(projections), dim=0), strict=True):
++                    weights[self.hf_param[f"{projection}.{expert_id}"]] = weight
++        return weights
++
++
+ # ---------------------------------------------------------------------------
+ # Stack spec
+ # ---------------------------------------------------------------------------
+ 
+ 
+-def glm5next_hybrid_stack_spec(config: HybridMLAModelProvider) -> ModuleSpec:
++def glm5next_hybrid_stack_spec(config: GLM53FlashModelConfig | HybridMLAModelProvider) -> ModuleSpec:
+     """Return the Hybrid stack with MLA q/kv norms wired into the DSA spec."""
+     stack_spec = deepcopy(get_default_hybrid_stack_spec(config))
+     dsa_submodules = stack_spec.submodules.dsa_layer.submodules
+@@ -348,6 +412,20 @@ def glm5next_hybrid_stack_spec(config: HybridMLAModelProvider) -> ModuleSpec:
+     attention_submodules = dsa_submodules.self_attention.submodules
+     attention_submodules.q_layernorm = native_norm
+     attention_submodules.kv_layernorm = native_norm
++
++    transformer_config = getattr(config, "transformer", config)
++    if getattr(transformer_config, "mega_moe", False):
++        from megatron.core.transformer.moe.moe_layer import MoELayer
++
++        from megatron.bridge.models.moe.mega_moe import PrimusTurboMegaMoELayer
++
++        moe_submodules = stack_spec.submodules.moe_layer.submodules
++        mlp = moe_submodules.mlp
++        if not isinstance(mlp, partial) or mlp.func is not MoELayer:
++            raise ValueError("GLM-5.3-Flash MegaMoE requires a native MoELayer builder.")
++
++        moe_submodules.mlp = partial(PrimusTurboMegaMoELayer, *mlp.args, **mlp.keywords)
++
+     return stack_spec
+ 
+ 
+@@ -863,6 +941,8 @@ class GLM53FlashBridge(MegatronModelBridge):
+     # ------------------------------------------------------------------
+ 
+     def maybe_modify_loaded_hf_weight(self, hf_param, hf_state_dict: Mapping[str, torch.Tensor]):
++        if isinstance(hf_param, _MegaMoEHFParams):
++            return partial(self.maybe_modify_loaded_hf_weight, hf_state_dict=hf_state_dict)
+         # InitOnlyMapping declares a synthetic HF key ("<mg>...__init_only__") that
+         # never exists in the checkpoint; skip the state-dict lookup so import keeps
+         # the Megatron module's random initialization.
+@@ -926,7 +1006,7 @@ class GLM53FlashBridge(MegatronModelBridge):
+                 mapping_list.extend(self._dsa_attn_mappings(attn_layer, hf_layer))
+ 
+             if is_moe:
+-                mapping_list.extend(self._moe_ffn_mappings(ffn_layer, hf_layer))
++                mapping_list.extend(self._moe_ffn_mappings(ffn_layer, hf_layer, text_config.n_routed_experts))
+             else:
+                 mapping_list.extend(self._dense_ffn_mappings(ffn_layer, hf_layer))
+ 
+@@ -955,7 +1035,7 @@ class GLM53FlashBridge(MegatronModelBridge):
+             mapping_list.extend(self._mhc_init_only_mappings(mtp_attn_layer))
+             mapping_list.extend(self._mhc_init_only_mappings(mtp_ffn_layer))
+             mapping_list.extend(self._dsa_attn_mappings(mtp_attn_layer, mtp_hf))
+-            mapping_list.extend(self._moe_ffn_mappings(mtp_ffn_layer, mtp_hf))
++            mapping_list.extend(self._moe_ffn_mappings(mtp_ffn_layer, mtp_hf, text_config.n_routed_experts))
+ 
+         # The language model is a submodule of the VLM wrapper, so prefix every
+         # Megatron param with ``language_model.`` and append the replicated vision weights.
+@@ -1111,7 +1191,7 @@ class GLM53FlashBridge(MegatronModelBridge):
+         ]
+ 
+     @staticmethod
+-    def _moe_ffn_mappings(mg_layer: str, hf_layer: str) -> list:
++    def _moe_ffn_mappings(mg_layer: str, hf_layer: str, num_experts: int) -> list:
+         """MoE FFN (router + shared expert + routed experts) mappings."""
+         inner = f"{mg_layer}.inner_layer"
+         mlp = f"{inner}.mlp"
+@@ -1152,4 +1232,19 @@ class GLM53FlashBridge(MegatronModelBridge):
+                 gate=f"{hf_mlp}.experts.*.gate_proj.weight",
+                 up=f"{hf_mlp}.experts.*.up_proj.weight",
+             ),
++            _MegaMoEExpertMapping(
++                f"{mlp}.experts.fc1_weight.weight",
++                {
++                    f"{projection}.{expert_id}": f"{hf_mlp}.experts.{expert_id}.{projection}.weight"
++                    for expert_id in range(num_experts)
++                    for projection in ("gate_proj", "up_proj")
++                },
++            ),
++            _MegaMoEExpertMapping(
++                f"{mlp}.experts.fc2_weight.weight",
++                {
++                    f"down_proj.{expert_id}": f"{hf_mlp}.experts.{expert_id}.down_proj.weight"
++                    for expert_id in range(num_experts)
++                },
++            ),
+         ]
+diff --git a/src/megatron/bridge/models/gpt/gpt_builder.py b/src/megatron/bridge/models/gpt/gpt_builder.py
+index de82abd..344954b 100644
+--- a/src/megatron/bridge/models/gpt/gpt_builder.py
++++ b/src/megatron/bridge/models/gpt/gpt_builder.py
+@@ -62,13 +62,43 @@ class GPTModelBuilder(MCoreGPTModelBuilder):
+         return super().build_model(pg_collection, pre_process, post_process, vp_stage)
+ 
+ 
++def _use_mega_moe(config: TransformerConfig) -> bool:
++    """Whether this model builds MegaMoE fused layers instead of Megatron's MoE layer."""
++    return bool(getattr(config, "mega_moe", False))
++
++
++def _mega_moe_layer_spec(spec: ModuleSpec) -> ModuleSpec:
++    """Swap the MoE layer in a TransformerLayer spec for the fused MegaMoE layer.
++
++    ``submodules.mlp`` is a ``functools.partial`` of ``MoELayer`` carrying the
++    ``MoESubmodules`` (router, experts, shared experts) built by Megatron Core.
++    MegaMoE reuses the router and shared-expert specs and replaces the routed
++    experts with the fused operator, so rebinding the partial's ``module`` to
++    ``PrimusTurboMegaMoELayer`` is enough.
++    """
++    import functools
++
++    from megatron.core.transformer.moe.moe_layer import MoELayer
++
++    from megatron.bridge.models.moe.mega_moe import PrimusTurboMegaMoELayer
++
++    mlp = spec.submodules.mlp
++    if not isinstance(mlp, functools.partial) or mlp.func is not MoELayer:
++        raise ValueError(
++            "MegaMoE requires a Megatron MoE layer spec, but the GPT layer spec built "
++            f"{mlp!r}. Enable --num-experts and a MoE-capable transformer impl."
++        )
++    spec.submodules.mlp = functools.partial(PrimusTurboMegaMoELayer, **mlp.keywords)
++    return spec
++
++
+ def transformer_engine_layer_spec(config: "GPTModelConfig") -> ModuleSpec:
+     """Create a Transformer Engine layer specification based on the provided config."""
+     if "use_te_op_fuser" in inspect.signature(get_gpt_layer_with_transformer_engine_spec).parameters:
+         kwargs = {"use_te_op_fuser": config.use_transformer_engine_op_fuser}
+     else:
+         kwargs = {}
+-    return get_gpt_layer_with_transformer_engine_spec(
++    spec = get_gpt_layer_with_transformer_engine_spec(
+         num_experts=config.transformer.num_moe_experts,
+         moe_grouped_gemm=config.transformer.moe_grouped_gemm,
+         qk_layernorm=config.transformer.qk_layernorm,
+@@ -76,6 +106,10 @@ def transformer_engine_layer_spec(config: "GPTModelConfig") -> ModuleSpec:
+         **kwargs,
+     )
+ 
++    if _use_mega_moe(config.transformer):
++        spec = _mega_moe_layer_spec(spec)
++    return spec
++
+ 
+ def transformer_engine_full_layer_spec(config: TransformerConfig) -> ModuleSpec:
+     """Create a full Transformer Engine layer specification with autocast support.
+@@ -100,13 +134,17 @@ def local_layer_spec(config: TransformerConfig) -> ModuleSpec:
+     Returns:
+         ModuleSpec: Module specification for local implementation layers
+     """
+-    return get_gpt_layer_local_spec(
++    spec = get_gpt_layer_local_spec(
+         num_experts=config.num_moe_experts,
+         moe_grouped_gemm=config.moe_grouped_gemm,
+         qk_layernorm=config.qk_layernorm,
+         normalization=config.normalization,
+     )
+ 
++    if _use_mega_moe(config):
++        spec = _mega_moe_layer_spec(spec)
++    return spec
++
+ 
+ def modelopt_transformer_layer_spec(config: "GPTModelConfig") -> ModuleSpec:
+     """Layer specification for quantization with ModelOpt."""
+diff --git a/src/megatron/bridge/models/moe/__init__.py b/src/megatron/bridge/models/moe/__init__.py
+new file mode 100644
+index 0000000..ccb783f
+--- /dev/null
++++ b/src/megatron/bridge/models/moe/__init__.py
+@@ -0,0 +1,34 @@
++# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
++# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
++#
++# Licensed under the Apache License, Version 2.0 (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy of the License at
++#
++#     http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++
++"""MoE building blocks that are not part of Megatron Core."""
++
++from megatron.bridge.models.moe.mega_moe import (
++    MegaMoEFP8Experts,
++    MegaMoEExperts,
++    MegaMoEWeightModule,
++    PrimusTurboMegaMoELayer,
++    advance_mega_moe_weight_generation,
++    mega_moe_precision,
++)
++
++__all__ = [
++    "MegaMoEFP8Experts",
++    "MegaMoEExperts",
++    "MegaMoEWeightModule",
++    "PrimusTurboMegaMoELayer",
++    "advance_mega_moe_weight_generation",
++    "mega_moe_precision",
++]
+diff --git a/src/megatron/bridge/models/moe/mega_moe.py b/src/megatron/bridge/models/moe/mega_moe.py
+new file mode 100644
+index 0000000..c87cf48
+--- /dev/null
++++ b/src/megatron/bridge/models/moe/mega_moe.py
+@@ -0,0 +1,432 @@
++# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
++# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
++#
++# Licensed under the Apache License, Version 2.0 (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy of the License at
++#
++#     http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++
++"""MegaMoE layer, drop-in replacement for Megatron Core's ``MoELayer``.
++
++The implementation is adapted from Primus.  The accelerator package is provided
++as ``Primus-Turbo`` and imported through its ``primus_turbo`` module.
++
++MegaMoE fuses token dispatch, grouped GEMM, activation and token combine into a
++single execution path, which removes the kernel launch overhead and the
++intermediate memory movement of the standard Megatron MoE implementation.
++
++The layer is EP-only and keeps its parameters in bf16.  The optional MXFP8 path
++quantizes expert operands inside the fused operator while preserving bf16 model
++parameters and checkpoint format.
++"""
++
++from __future__ import annotations
++
++import contextlib
++from typing import Optional, Tuple
++
++import torch
++import torch.nn.functional as F
++from megatron.core import parallel_state
++from megatron.core.dist_checkpointing.mapping import ShardedTensor
++from megatron.core.process_groups_config import ProcessGroupCollection
++from megatron.core.tensor_parallel.random import (
++    get_cuda_rng_tracker,
++    get_expert_parallel_rng_tracker_name,
++)
++from megatron.core.transformer.module import MegatronModule
++from megatron.core.transformer.moe.moe_layer import BaseMoELayer, MoELayer
++from megatron.core.transformer.transformer_config import TransformerConfig
++from megatron.core.transformer.utils import ensure_metadata_has_dp_cp_group
++
++try:
++    from primus_turbo.pytorch.ops.moe.fused_mega_moe import (
++        fused_mega_moe_stage1,
++        fused_mega_moe_stage2,
++    )
++    from primus_turbo.pytorch.ops.moe.fused_mega_moe_fp8 import (
++        fused_mega_moe_fp8_stage1,
++        fused_mega_moe_fp8_stage2,
++    )
++
++    HAVE_TURBO = True
++except ImportError:
++    fused_mega_moe_stage1 = None
++    fused_mega_moe_stage2 = None
++    fused_mega_moe_fp8_stage1 = None
++    fused_mega_moe_fp8_stage2 = None
++    HAVE_TURBO = False
++
++
++SUPPORTED_PRECISIONS = ("bf16", "mxfp8")
++
++
++def mega_moe_precision(config: TransformerConfig) -> str:
++    """Return the configured MegaMoE expert precision."""
++    precision = getattr(config, "turbo_mega_moe_precision", "bf16") or "bf16"
++    assert precision in SUPPORTED_PRECISIONS, (
++        f"turbo_mega_moe_precision must be one of {SUPPORTED_PRECISIONS}, got {precision!r}"
++    )
++    return precision
++
++
++def advance_mega_moe_weight_generation() -> None:
++    """Invalidate Primus-Turbo's cached MXFP8 expert weights."""
++    if not HAVE_TURBO:
++        return
++    from primus_turbo.pytorch.kernels.fused_mega_moe import advance_weight_generation
++
++    advance_weight_generation()
++
++
++class MegaMoEWeightModule(MegatronModule):
++    """Callable expert-weight module used as a DDP overlap boundary."""
++
++    def __init__(self, config: TransformerConfig, weight_shape) -> None:
++        super().__init__(config)
++        device = (
++            torch.device("cpu") if config.use_cpu_initialization else torch.cuda.current_device()
++        )
++        self.weight = torch.nn.Parameter(
++            torch.empty(weight_shape, device=device, dtype=config.params_dtype)
++        )
++
++    def forward(self) -> torch.Tensor:
++        return self.weight
++
++    def backward_dw(self) -> None:
++        # The custom autograd operator produces wgrad.
++        return None
++
++
++class MegaMoEExperts(MegatronModule):
++    """Two-stage bf16 experts with separately wrapped w1/w2 parameters."""
++
++    def __init__(
++        self,
++        config: TransformerConfig,
++        experts_per_rank: int,
++        hidden_size: int,
++        intermediate_size: int,
++        ep_group,
++    ) -> None:
++        super().__init__(config)
++        self.ep_group = ep_group
++        self.experts_per_rank = experts_per_rank
++        # w1 [g, 2I, H] gate+up; w2 [g, H, I] down.
++        self.fc1_weight = MegaMoEWeightModule(
++            config, (experts_per_rank, 2 * intermediate_size, hidden_size)
++        )
++        self.fc2_weight = MegaMoEWeightModule(
++            config, (experts_per_rank, hidden_size, intermediate_size)
++        )
++
++        # Expert weights are already EP-sharded, so the DP all-reduce hook must
++        # not touch them.
++        expert_parallel = config.expert_model_parallel_size > 1
++        for param in (self.fc1_weight.weight, self.fc2_weight.weight):
++            setattr(param, "allreduce", not expert_parallel)
++
++    def reset_parameters(self, ep_rank: int) -> None:
++        """Initialize expert weights in the same order as TEGroupedLinear."""
++        init_fc1 = self.config.init_method
++        init_fc2 = self.config.output_layer_init_method
++        assert init_fc1 is not None and init_fc2 is not None, "config init methods are unset"
++        weights = (
++            (self.fc1_weight.weight, init_fc1),
++            (self.fc2_weight.weight, init_fc2),
++        )
++
++        if self.config.use_cpu_initialization:
++            # CPU RNG is rank-identical: draw every expert and retain this rank's shard.
++            first_expert = ep_rank * self.experts_per_rank
++            for weight, init_method in weights:
++                master = torch.empty(weight.shape[1:], dtype=torch.float32)
++                for expert_idx in range(self.config.num_moe_experts):
++                    init_method(master)
++                    if first_expert <= expert_idx < first_expert + self.experts_per_rank:
++                        weight.data[expert_idx - first_expert].copy_(master)
++            return
++
++        tracker = get_cuda_rng_tracker()
++        rng_fork = (
++            tracker.fork(get_expert_parallel_rng_tracker_name())
++            if tracker.is_initialized()
++            else contextlib.nullcontext()
++        )
++        with rng_fork:
++            for weight, init_method in weights:
++                for expert_weight in weight.data:
++                    init_method(expert_weight)
++
++    def forward(self, x, topk_idx, topk_weights):
++        # Fetch w2 only after stage1 so DDP sees the same fc1-then-fc2 order.
++        w1 = self.fc1_weight()
++        l1_out, dispatch_weights, handle = fused_mega_moe_stage1(
++            x, topk_idx, topk_weights, w1, self.ep_group
++        )
++        w2 = self.fc2_weight()
++        return fused_mega_moe_stage2(
++            l1_out,
++            dispatch_weights,
++            handle,
++            topk_idx,
++            topk_weights,
++            w2,
++            self.ep_group,
++        )
++
++    def backward_dw(self) -> None:
++        # Match the native fc2-then-fc1 order.
++        self.fc2_weight.backward_dw()
++        self.fc1_weight.backward_dw()
++
++
++class MegaMoEFP8Experts(MegaMoEExperts):
++    """MXFP8 sibling using the FP8 MegaMoE stage pair."""
++
++    def forward(self, x, topk_idx, topk_weights):
++        w1 = self.fc1_weight()
++        l1_out, dispatch_weights, handle, state = fused_mega_moe_fp8_stage1(
++            x, topk_idx, topk_weights, w1, self.ep_group
++        )
++        w2 = self.fc2_weight()
++        return fused_mega_moe_fp8_stage2(
++            l1_out,
++            dispatch_weights,
++            handle,
++            state,
++            topk_idx,
++            topk_weights,
++            w2,
++            self.ep_group,
++        )
++
++
++class PrimusTurboMegaMoELayer(MoELayer):
++    """EP MoE layer: Megatron router -> fused MegaMoE experts -> shared expert.
++
++    Subclasses ``MoELayer`` so that the ``isinstance(mlp, MoELayer)`` checks in
++    ``TransformerLayer`` keep routing this layer through the MoE code paths.
++    ``MoELayer.__init__`` is bypassed: the native token dispatcher and grouped
++    experts are replaced by the fused operator.
++    """
++
++    def __init__(
++        self,
++        config: TransformerConfig,
++        submodules: Optional[object] = None,
++        layer_number: Optional[int] = None,
++        pg_collection: Optional[ProcessGroupCollection] = None,
++        is_mtp_layer: bool = False,
++        hash_moe_layer_threshold: Optional[int] = None,
++        name: Optional[str] = None,
++    ) -> None:
++        assert pg_collection is not None and pg_collection.ep is not None, (
++            "MegaMoE requires an expert-parallel process group"
++        )
++        assert submodules is not None, "MegaMoE requires MoESubmodules (router/shared_experts)"
++        assert HAVE_TURBO, (
++            "MegaMoE requires Primus-Turbo (primus_turbo.pytorch.ops.moe.fused_mega_moe)"
++        )
++        self._assert_supported_config(config)
++
++        BaseMoELayer.__init__(
++            self,
++            config=config,
++            layer_number=layer_number,
++            pg_collection=pg_collection,
++            is_mtp_layer=is_mtp_layer,
++        )
++
++        self.submodules = submodules
++        self.hash_moe_layer_threshold = hash_moe_layer_threshold
++        self.name = name
++
++        self.ep_size = self.ep_group.size()
++        self.ep_rank = self.ep_group.rank()
++        self.experts_per_rank = self.num_local_experts
++        self.hidden_size = config.hidden_size
++        self.intermediate_size = config.moe_ffn_hidden_size
++
++        router_kwargs = {}
++        if hash_moe_layer_threshold is not None:
++            router_kwargs["hash_moe_layer_threshold"] = hash_moe_layer_threshold
++        self.router = submodules.router(
++            config=config,
++            pg_collection=pg_collection,
++            is_mtp_layer=is_mtp_layer,
++            **router_kwargs,
++        )
++        if layer_number is not None:
++            self.router.set_layer_number(layer_number)
++
++        experts_cls = (
++            MegaMoEFP8Experts if mega_moe_precision(config) == "mxfp8" else MegaMoEExperts
++        )
++        self.experts = experts_cls(
++            config,
++            self.experts_per_rank,
++            self.hidden_size,
++            self.intermediate_size,
++            self.ep_group,
++        )
++        if config.perform_initialization:
++            self.experts.reset_parameters(self.ep_rank)
++
++        if self.use_shared_expert:
++            assert submodules.shared_experts is not None, (
++                "Shared experts builder is not provided in the module spec."
++            )
++            # ``shared_experts`` is a builder (partial of SharedExpertMLP), the same
++            # shape MoELayer.__init__ consumes.
++            self.shared_experts = submodules.shared_experts(
++                config=config,
++                pg_collection=pg_collection,
++                gate=config.moe_shared_expert_gate,
++                name=(name + ".shared_experts") if name is not None else None,
++            )
++
++    @staticmethod
++    def _assert_supported_config(config: TransformerConfig) -> None:
++        """Validate constraints imposed by the fused kernel."""
++        assert config.tensor_model_parallel_size == 1, "MegaMoE is EP-only (TP==1)"
++        assert config.params_dtype == torch.bfloat16, "MegaMoE only supports bf16 params"
++        assert config.gated_linear_unit, "MegaMoE hardcodes a gated SwiGLU MLP"
++        assert config.activation_func in (F.silu, torch.nn.SiLU), "MegaMoE hardcodes SiLU"
++        assert config.moe_expert_capacity_factor is None, (
++            "MegaMoE is dropless; moe_expert_capacity_factor must be None"
++        )
++        assert not config.add_bias_linear, (
++            "MegaMoE fused experts have no bias; set add_bias_linear=False"
++        )
++        assert not config.init_model_with_meta_device, (
++            "MegaMoE does not support meta-device initialization"
++        )
++        assert not getattr(config, "moe_latent_size", None), (
++            "MegaMoE does not support MoE latent projections"
++        )
++        assert getattr(config, "moe_megakernel_backend", None) is None, (
++            "MegaMoE replaces the MoE megakernel; leave moe_megakernel_backend unset"
++        )
++        assert not config.moe_shared_expert_overlap, (
++            "MegaMoE does not support shared expert overlap"
++        )
++        assert config.transformer_impl != "inference_optimized", (
++            "MegaMoE is a training path; it has no inference-optimized dispatcher"
++        )
++        capturing = (
++            getattr(config, "cuda_graph_impl", "none") not in (None, "none")
++            or getattr(config, "enable_cuda_graph", False)
++            or getattr(config, "external_cuda_graph", False)
++        )
++        if capturing:
++            captured_modules = str(getattr(config, "cuda_graph_modules", "")).lower()
++            assert "moe" not in captured_modules, (
++                "MegaMoE forwards through a custom autograd operator and cannot be captured "
++                "by the MoE CUDA-graph scopes; drop moe/moe_router/moe_preprocess from "
++                "cuda_graph_modules"
++            )
++        load_balancing_type = config.moe_router_load_balancing_type
++        load_balancing_types = (
++            load_balancing_type
++            if isinstance(load_balancing_type, (list, tuple))
++            else [load_balancing_type]
++        )
++        assert "sinkhorn" not in load_balancing_types, (
++            "MegaMoE does not support sinkhorn load balancing"
++        )
++
++    def forward(
++        self,
++        hidden_states: torch.Tensor,
++        intermediate_tensors: Optional[torch.Tensor] = None,
++        padding_mask: Optional[torch.Tensor] = None,
++        input_ids: Optional[torch.Tensor] = None,
++        packed_seq_params: Optional[object] = None,
++    ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
++        assert intermediate_tensors is None, "MegaMoE does not support partial MoE execution"
++        input_shape = hidden_states.shape
++        if padding_mask is not None:
++            padding_mask = padding_mask.transpose(0, 1).bool()
++
++        probs, _ = self.router(
++            hidden_states,
++            padding_mask,
++            input_ids=input_ids,
++            packed_seq_params=packed_seq_params,
++        )
++        # Non-MoonEP routing returns dense probabilities [num_tokens, num_experts].
++        probs = probs.reshape(-1, self.config.num_moe_experts)
++        topk_weights, topk_idx = probs.topk(self.router.topk, dim=-1)
++
++        x = hidden_states.reshape(-1, self.hidden_size).to(torch.bfloat16)
++        y = self.experts(x, topk_idx, topk_weights.to(torch.float32))
++        y = y.reshape(input_shape).to(hidden_states.dtype)
++        if self.shared_experts is not None:
++            y = y + self.shared_experts(hidden_states)
++        return y, None
++
++    def sharded_state_dict(
++        self,
++        prefix: str = "",
++        sharded_offsets: Tuple[Tuple[int, int, int], ...] = (),
++        metadata: Optional[dict] = None,
++    ):
++        metadata = ensure_metadata_has_dp_cp_group(metadata)
++        prepend_axis_num = len(sharded_offsets)
++        edp_rank = parallel_state.get_expert_data_parallel_rank()
++        expert_replica_id = (0, 0, edp_rank)
++
++        sharded_state_dict = {}
++        for name, weight in (
++            ("fc1_weight", self.experts.fc1_weight.weight),
++            ("fc2_weight", self.experts.fc2_weight.weight),
++        ):
++            key = f"{prefix}experts.{name}.weight"
++            sharded_state_dict[key] = ShardedTensor.from_rank_offsets(
++                key,
++                weight,
++                *sharded_offsets,
++                (prepend_axis_num, self.ep_rank, self.ep_size),
++                replica_id=expert_replica_id,
++                prepend_axis_num=prepend_axis_num,
++            )
++
++        sharded_state_dict.update(
++            self.router.sharded_state_dict(f"{prefix}router.", sharded_offsets, metadata)
++        )
++        if self.shared_experts is not None:
++            sharded_state_dict.update(
++                self.shared_experts.sharded_state_dict(
++                    f"{prefix}shared_experts.", sharded_offsets, metadata
++                )
++            )
++        return sharded_state_dict
++
++    def set_layer_number(self, layer_number: int) -> None:
++        self.layer_number = layer_number
++        self.router.set_layer_number(layer_number)
++
++    def set_for_recompute_pre_mlp_layernorm(self) -> None:
++        """MegaMoE has no routed-expert linear_fc1 to mark, only the shared expert."""
++        if self.shared_experts is not None:
++            from megatron.core.extensions.transformer_engine import set_save_original_input
++
++            set_save_original_input(self.shared_experts.linear_fc1)
++
++    def backward_dw(self, routed_experts: bool = True, shared_experts: bool = False) -> None:
++        """Compute weight gradients for experts and shared experts."""
++        if routed_experts:
++            # Match the native fc2-then-fc1 order.
++            self.experts.backward_dw()
++        if shared_experts and self.shared_experts is not None:
++            if hasattr(self.shared_experts, "backward_dw"):
++                self.shared_experts.backward_dw()
+diff --git a/src/megatron/bridge/models/transformer_config.py b/src/megatron/bridge/models/transformer_config.py
+index f91be59..82f8610 100644
+--- a/src/megatron/bridge/models/transformer_config.py
++++ b/src/megatron/bridge/models/transformer_config.py
+@@ -221,6 +221,10 @@ class TransformerConfig(MCoreTransformerConfig):
+     yarn_mscale_all_dim: float | None = None
+     yarn_correction_range_round_to_int: bool | None = None
+ 
++    # MegaMoE replaces the Megatron MoE layer
++    mega_moe: bool = False
++    turbo_mega_moe_precision: str = "bf16"
++
+     def __post_init__(self) -> None:
+         """Skip MCore post_init during initial construction.
+ 
+diff --git a/src/megatron/bridge/training/train.py b/src/megatron/bridge/training/train.py
+index 1a8458e..55f6977 100644
+--- a/src/megatron/bridge/training/train.py
++++ b/src/megatron/bridge/training/train.py
+@@ -1025,6 +1025,20 @@ def train_step(
+     timers("optimizer").stop()
+     nvtx_range_pop(suffix="optimizer_step")
+ 
++    # MegaMoE MXFP8 caches the quantized expert weights inside the fused operator.
++    # Advance the generation after the optimizer updates the bf16 master weights so
++    # the next forward re-quantizes them.
++    transformer_config = getattr(cfg.model, "transformer", None)
++    if (
++            update_successful
++            and transformer_config is not None
++            and getattr(transformer_config, "mega_moe", False)
++            and getattr(transformer_config, "turbo_mega_moe_precision", "bf16") == "mxfp8"
++    ):
++        from megatron.bridge.models.moe.mega_moe import advance_mega_moe_weight_generation
++
++        advance_mega_moe_weight_generation()
++
+     # when freezing sub-models we may have a mixture of successful and unsucessful ranks,
+     # so we must gather across mp ranks
+     if train_config.check_optimizer_step_success:
