@@ -5,7 +5,7 @@
 |----------|--------|-------------------------|
 | BW1101, 32 GPUs | `qwen35_vl_27b_pretrain_32gpu_bw1101_bf16_mock_config` | BF16 Adam |
 | BW1101, 16 GPUs | `qwen35_vl_27b_sft_16gpu_bw1101_bf16_config` | BF16 Adam |
-| BW1101, 4 GPUs | `qwen35_vl_27b_peft_4gpu_bw1101_bf16_config` | BF16 Adam |
+| BW1101, 8 GPUs | `qwen35_vl_27b_peft_8gpu_bw1101_bf16_config` | BF16 Adam |
 
 
 ## 1、环境准备
@@ -53,7 +53,7 @@ pip install -r examples_hcu/requirements.txt
 
 ## 2、数据处理（pretrain不需要）
 
-### 2.1 sft、peft
+### 2.1 sft、lora
 
 #### 数据集下载
 ```python
@@ -84,14 +84,10 @@ pip install modelscope
 
 cd /workspace
 
-modelscope download --model Qwen/Qwen3.5-27B --local_dir ./Qwen3.5-27B
 modelscope download --model Qwen/Qwen3.8-27B --local_dir ./Qwen3.8-27B
 ```
 
-或者手动下载模型文件，上传至 `/workspace` 路径下：
-
-- [Qwen3.5-27B](https://www.modelscope.cn/models/Qwen/Qwen3.5-27B/files)
-- [Qwen3.8-27B](https://www.modelscope.cn/models/Qwen/Qwen3.8-27B/files)
+或者[点击链接](https://www.modelscope.cn/models/Qwen/Qwen3.8-27B/files)，手动下载模型文件，上传至`/workspace`路径下。
 
 ## 4、启动任务
 
@@ -145,7 +141,7 @@ HOSTFILE: path to hostfile
 NODES: The number of nodes you use
 ```
 
-#### peft
+#### lora
 ```shell
 docker exec -it "your container name" bash
 cd /workspace/Megatron-bridge-das/examples_hcu/qwen38_27b
@@ -155,10 +151,10 @@ DATA_PATH=${DATA_PATH:-/path/to/MedPix-VQA}
 export LOCAL_HF_PATH=${LOCAL_HF_PATH:-/path/to/Qwen3.8-27B}
 export LOCAL_CORE_PATH=${LOCAL_CORE_PATH:-/path/to/Qwen3.8-27B-core}
 
-./train_qwen38_27b_peft.sh <RECIPE> <MODE> [HOSTFILE] [NODES]
+./train_qwen38_27b_lora.sh <RECIPE> <MODE> [HOSTFILE] [NODES]
 
-RECIPE: SUPPORTED_RECIPES in train_qwen38_27b_peft.sh
-MODE: dryrun or peft # 配置dryrun时不需要再跟HOSTFILE和NODES参数
+RECIPE: SUPPORTED_RECIPES in train_qwen38_27b_lora.sh
+MODE: dryrun or lora # 配置dryrun时不需要再跟HOSTFILE和NODES参数
 HOSTFILE: path to hostfile
 NODES: The number of nodes you use
 ```

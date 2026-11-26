@@ -8,7 +8,7 @@ index 729f03ea..6f62967e 100644
  
 +# Qwen3.5-VL BW1101 models
 +from .bw1101.qwen38_vl import (
-+    qwen35_vl_27b_peft_4gpu_bw1101_bf16_config,
++    qwen35_vl_27b_peft_8gpu_bw1101_bf16_config,
 +    qwen35_vl_27b_pretrain_32gpu_bw1101_bf16_mock_config,
 +    qwen35_vl_27b_sft_16gpu_bw1101_bf16_config,
 +)
@@ -20,7 +20,7 @@ index 729f03ea..6f62967e 100644
      "qwen35_vl_4b_peft_config",
      "qwen35_vl_9b_peft_config",
      "qwen35_vl_27b_peft_config",
-+    "qwen35_vl_27b_peft_4gpu_bw1101_bf16_config",
++    "qwen35_vl_27b_peft_8gpu_bw1101_bf16_config",
 +    "qwen35_vl_27b_pretrain_32gpu_bw1101_bf16_mock_config",
 +    "qwen35_vl_27b_sft_16gpu_bw1101_bf16_config",
      # Qwen3.5-VL PEFT configs — MoE
@@ -52,7 +52,7 @@ index 0000000..ea63d84da
 +__all__ = [
 +    "qwen35_vl_27b_pretrain_32gpu_bw1101_bf16_mock_config",
 +    "qwen35_vl_27b_sft_16gpu_bw1101_bf16_config",
-+    "qwen35_vl_27b_peft_4gpu_bw1101_bf16_config",
++    "qwen35_vl_27b_peft_8gpu_bw1101_bf16_config",
 +]
 diff --git a/src/megatron/bridge/recipes/qwen_vl/bw1101/qwen38_vl.py b/src/megatron/bridge/recipes/qwen_vl/bw1101/qwen38_vl.py
 new file mode 100644
@@ -101,7 +101,7 @@ index 0000000..e50056a42
 +    return cfg
 +
 +
-+def qwen35_vl_27b_peft_4gpu_bw1101_bf16_config() -> ConfigContainer:
++def qwen35_vl_27b_peft_8gpu_bw1101_bf16_config() -> ConfigContainer:
 +    """Return the BW1101 entry point for Qwen3.8-VL 27B LoRA (four accelerators)."""
 +    cfg = qwen35_vl_27b_peft_2gpu_h100_bf16_config()
 +    return cfg
@@ -110,5 +110,5 @@ index 0000000..e50056a42
 +__all__ = [
 +    "qwen35_vl_27b_pretrain_32gpu_bw1101_bf16_mock_config",
 +    "qwen35_vl_27b_sft_16gpu_bw1101_bf16_config",
-+    "qwen35_vl_27b_peft_4gpu_bw1101_bf16_config",
++    "qwen35_vl_27b_peft_8gpu_bw1101_bf16_config",
 +]

@@ -23,7 +23,7 @@ GREEN="\033[32m"
 YELLOW="\033[33m"
 RESET="\033[0m"
 
-# Discover supported recipes from the qwen module
+# supported recipes
 SUPPORTED_RECIPES=(
     qwen35_vl_27b_sft_16gpu_bw1101_bf16_config
 )
@@ -102,12 +102,11 @@ TRAIN_CONFIG=(
     train.train_iters=${TRAIN_ITERS}
     train.global_batch_size=${GLOBAL_BATCH_SIZE}
     train.micro_batch_size=${MICRO_BATCH_SIZE}
-    scheduler.lr_warmup_iters=10
-    scheduler.lr_decay_iters=${TRAIN_ITERS} 
-    validation.eval_iters=0 
-    validation.eval_interval=0 
-    ddp.check_for_large_grads=true 
+    rng.seed=5678
+    scheduler.lr_warmup_iters=$(( TRAIN_ITERS / 10 ))
+    scheduler.lr_decay_iters=${TRAIN_ITERS}
     tokenizer.tokenizer_model=${LOCAL_HF_PATH}
+    dist.distributed_timeout_minutes=120
 )
 
 # ===================================== Optimizer Config =====================================
@@ -129,10 +128,6 @@ PARALLEL_CONFIG=(
 MODEL_CONFIG=(
     model.hf_model_id=${LOCAL_HF_PATH}
     model.bos_token_id=248044
-    model.recompute_granularity=full
-    model.recompute_method=uniform
-    model.recompute_num_layers=1
-    model.recompute_modules=null
 )
 
 # ===================================== Checkpoint & Logging Config =====================================
@@ -141,13 +136,13 @@ CONFIG_DUMP=${SAVE_DIR}/${RECIPE}.yaml
 
 CKPT_AND_LOGGING_CONFIG=(
     checkpoint.pretrained_checkpoint=${LOCAL_CORE_PATH}/iter_0000000
-    checkpoint.load=null
+    checkpoint.load=${SAVE_DIR}/ckpt
     checkpoint.load_optim=false
     checkpoint.load_rng=false
     checkpoint.save=${SAVE_DIR}/ckpt
     checkpoint.save_optim=false
     checkpoint.save_rng=false
-    checkpoint.save_interval=50
+    checkpoint.save_interval=100
     logger.log_interval=1
     logger.logging_level=40
     logger.log_throughput=true
@@ -165,9 +160,9 @@ PROFILING_CONFIG=(
 )
 
 # ===================================== Summary =====================================
-mkdir -p ${SAVE_DIR}/sft_logs
+mkdir -p ${SAVE_DIR}/${MODE}_logs
 echo "======================================"
-echo -e "${YELLOW}Qwen3.8-27B sft${RESET}"
+echo -e "${YELLOW}Qwen3.8-27B ${MODE}${RESET}"
 echo "======================================"
 echo "Mode:        ${MODE}"
 echo "Recipe:      ${RECIPE}"
@@ -198,7 +193,7 @@ env_args=(
     -x MASTER_ADDR=${MASTER_ADDR}
     -x MASTER_PORT=${MASTER_PORT}
 )
-SAVE_LOG=${SAVE_DIR}/sft_logs/mpi_$(date +%F-%H%M).log
+SAVE_LOG=${SAVE_DIR}/${MODE}_logs/mpi_$(date +%F-%H%M).log
 
 # ------------------------------------------------------------------------------
 # Phase 1: HF -> Megatron import (skipped if the base checkpoint already exists)
@@ -231,7 +226,7 @@ case "${MODE}" in
         source ${BRIDGE_ENV_SCRIPT}
         python ${MEGATRON_PATH}/scripts/training/run_recipe.py \
             --recipe ${RECIPE} \
-            --mode sft \
+            --mode ${MODE} \
             --dry-run \
             "${DATA_CONFIG[@]}" \
             "${TRAIN_CONFIG[@]}" \
@@ -254,7 +249,7 @@ case "${MODE}" in
         RECIPE_ARGS=(
             ${MEGATRON_PATH}/scripts/training/run_recipe.py
             --recipe ${RECIPE}
-            --mode sft
+            --mode ${MODE}
             --dataset medpix
             ${DATA_CONFIG[@]}
             ${TRAIN_CONFIG[@]}
@@ -293,7 +288,7 @@ case "${MODE}" in
         ;;
 
     *)
-        echo "ERROR: unknown mode '${MODE}'. Use 'dryrun' or 'sft'."
+        echo "ERROR: unknown mode '${MODE}'."
         exit 1
         ;;
 esac
