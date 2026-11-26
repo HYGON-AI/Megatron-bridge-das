@@ -3,11 +3,15 @@
 ## Supported
 | Hardware | Recipe | Precision and optimizer |
 |----------|--------|-------------------------|
-| BW1101, 32 GPUs | `deepseek_v4_flash_pretrain_32gpu_bw1101_bf16_test_config` | BF16 Adam |
-| BW1101, 32 GPUs | `deepseek_v4_flash_pretrain_32gpu_bw1101_bf16_muon_test_config` | BF16 Muon |
-| BW1101, 32 GPUs | `deepseek_v4_flash_pretrain_32gpu_bw1101_fp8sc_test_config` | FP8 Adam |
-| BW1101, 32 GPUs | `deepseek_v4_flash_sft_32gpu_bw1101_bf16_test_config` | BF16 Adam |
+| BW1101, 16 GPUs | `deepseek_v4_flash_pretrain_16gpu_bw1101_bf16_test_config` | BF16 Adam |
+| BW1101, 16 GPUs | `deepseek_v4_flash_pretrain_16gpu_bw1101_bf16_muon_test_config` | BF16 Muon |
+| BW1101, 16 GPUs | `deepseek_v4_flash_pretrain_16gpu_bw1101_fp8sc_test_config` | FP8 Adam |
+| BW1101, 16 GPUs | `deepseek_v4_flash_sft_16gpu_bw1101_bf16_test_config` | BF16 Adam |
 | BW1101, 32 GPUs | `deepseek_v4_flash_peft_32gpu_bw1101_bf16_config` | BF16 Adam |
+| BW1300, 16 GPUs | `deepseek_v4_flash_pretrain_16gpu_bw1300_bf16_test_config` | BF16 Adam |
+| BW1300, 16 GPUs | `deepseek_v4_flash_pretrain_16gpu_bw1300_bf16_muon_test_config` | BF16 Muon |
+| BW1300, 16 GPUs | `deepseek_v4_flash_pretrain_16gpu_bw1300_fp8sc_test_config` | FP8 Adam |
+| BW1300, 16 GPUs | `deepseek_v4_flash_sft_16gpu_bw1300_bf16_test_config` | BF16 Adam |
 
 
 ## 1、环境准备
@@ -80,7 +84,7 @@ cd /workspace/Megatron-bridge-das
 python3 examples_hcu/data_preparation/prepare_pile10k.py --stage all --parquet /workspace/pile-10k/data/train-00000-of-00001-4746b8785c874cc7.parquet --output-dir /workspace/the-pile --tokenizer-type HuggingFaceTokenizer --tokenizer-model /workspace/gpt2 --workers 32
 ```
 
-### 2.2 sft、peft
+### 2.2 sft、lora
 
 #### 数据集下载
 ```python
@@ -140,7 +144,7 @@ export LOCAL_HF_PATH=${LOCAL_HF_PATH:-/path/to/DeepSeek-V4-Flash}
 ./train_deepseekv4_flash_pretrain.sh <RECIPE> <MODE> [HOSTFILE] [NODES]
 
 RECIPE: SUPPORTED_RECIPES in train_deepseekv4_flash_pretrain.sh
-MODE: dryrun or train # 配置dryrun时不需要再跟HOSTFILE和NODES参数
+MODE: dryrun or pretrain # 配置dryrun时不需要再跟HOSTFILE和NODES参数
 HOSTFILE: path to hostfile
 NODES: The number of nodes you use
 
@@ -165,7 +169,7 @@ NODES: The number of nodes you use
 
 ```
 
-#### peft
+#### lora
 ```shell
 docker exec -it "your container name" bash
 cd /workspace/Megatron-bridge-das/examples_hcu/deepseekv4_flash
@@ -175,10 +179,10 @@ DATA_PATH=${DATA_PATH:-/path/to/OpenMathInstruct-2}
 export LOCAL_HF_PATH=${LOCAL_HF_PATH:-/path/to/DeepSeek-V4-Flash}
 export LOCAL_CORE_PATH=${LOCAL_CORE_PATH:-/path/to/DeepSeek-V4-Flash-core}
 
-./train_deepseekv4_flash_peft.sh <RECIPE> <MODE> [HOSTFILE] [NODES]
+./train_deepseekv4_flash_lora.sh <RECIPE> <MODE> [HOSTFILE] [NODES]
 
-RECIPE: SUPPORTED_RECIPES in train_deepseekv4_flash_peft.sh
-MODE: dryrun or peft # 配置dryrun时不需要再跟HOSTFILE和NODES参数
+RECIPE: SUPPORTED_RECIPES in train_deepseekv4_flash_lora.sh
+MODE: dryrun or lora # 配置dryrun时不需要再跟HOSTFILE和NODES参数
 HOSTFILE: path to hostfile
 NODES: The number of nodes you use
 

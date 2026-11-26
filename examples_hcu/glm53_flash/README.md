@@ -98,7 +98,7 @@ cd /workspace/Megatron-bridge-das
 python3 examples_hcu/data_preparation/prepare_wikitext103.py --parquet-dir /workspace/wikitext/wikitext-103-raw-v1/ --output-dir  /workspace/wikitext103 --tokenizer-model /workspace/GLM-5.3-Flash --workers 32
 ```
 
-### 2.2 sft、peft
+### 2.2 sft、lora
 
 #### 数据集下载
 ```python
@@ -163,7 +163,7 @@ export LOCAL_HF_PATH=${LOCAL_HF_PATH:-/path/to/GLM-5.3-Flash}
 ./train_glm53_flash_pretrain.sh <RECIPE> <MODE> [HOSTFILE] [NODES]
 
 RECIPE: SUPPORTED_RECIPES in train_glm53_flash_pretrain.sh
-MODE: dryrun or train # 配置dryrun时不需要再跟HOSTFILE和NODES参数
+MODE: dryrun or pretrain # 配置dryrun时不需要再跟HOSTFILE和NODES参数
 HOSTFILE: path to hostfile
 NODES: The number of nodes you use
 
@@ -187,7 +187,7 @@ NODES: The number of nodes you use
 
 ```
 
-#### peft
+#### lora
 ```shell
 docker exec -it "your container name" bash
 cd /workspace/Megatron-bridge-das/examples_hcu/glm53_flash
@@ -196,10 +196,10 @@ PORT=${PORT:-12345} # Set the SSH port by running /usr/sbin/sshd -p <port> insid
 DATA_PATH=${DATA_PATH:-/path/to/tulu-3-sft-mixture}
 export LOCAL_HF_PATH=${LOCAL_HF_PATH:-/path/to/GLM-5.3-Flash}
 
-./train_glm53_flash_peft.sh <RECIPE> <MODE> [HOSTFILE] [NODES]
+./train_glm53_flash_lora.sh <RECIPE> <MODE> [HOSTFILE] [NODES]
 
-RECIPE: SUPPORTED_RECIPES in train_glm53_flash_peft.sh
-MODE: dryrun or peft # 配置dryrun时不需要再跟HOSTFILE和NODES参数
+RECIPE: SUPPORTED_RECIPES in train_glm53_flash_lora.sh
+MODE: dryrun or lora # 配置dryrun时不需要再跟HOSTFILE和NODES参数
 HOSTFILE: path to hostfile
 NODES: The number of nodes you use
 

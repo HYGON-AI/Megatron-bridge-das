@@ -1,36 +1,46 @@
 diff --git a/src/megatron/bridge/recipes/deepseek/__init__.py b/src/megatron/bridge/recipes/deepseek/__init__.py
-index c1b8a111..4b544769 100644
+index c1b8a11..24a119d 100644
 --- a/src/megatron/bridge/recipes/deepseek/__init__.py
 +++ b/src/megatron/bridge/recipes/deepseek/__init__.py
-@@ -53,6 +53,13 @@ from .gb300.deepseek_v4 import (
+@@ -53,6 +53,19 @@ from .gb300.deepseek_v4 import (
      deepseek_v4_pro_pretrain_32gpu_gb300_bf16_config,
      deepseek_v4_pro_pretrain_32gpu_gb300_fp8mx_config,
  )
 +from .bw1101.deepseek_v4 import (
-+    deepseek_v4_flash_pretrain_32gpu_bw1101_bf16_test_config,
-+    deepseek_v4_flash_pretrain_32gpu_bw1101_bf16_muon_test_config,
-+    deepseek_v4_flash_pretrain_32gpu_bw1101_fp8sc_test_config,
-+    deepseek_v4_flash_sft_32gpu_bw1101_bf16_test_config,
++    deepseek_v4_flash_pretrain_16gpu_bw1101_bf16_test_config,
++    deepseek_v4_flash_pretrain_16gpu_bw1101_bf16_muon_test_config,
++    deepseek_v4_flash_pretrain_16gpu_bw1101_fp8sc_test_config,
++    deepseek_v4_flash_sft_16gpu_bw1101_bf16_test_config,
 +    deepseek_v4_flash_peft_32gpu_bw1101_bf16_config,
++)
++from .bw1300.deepseek_v4 import (
++    deepseek_v4_flash_pretrain_16gpu_bw1300_bf16_test_config,
++    deepseek_v4_flash_pretrain_16gpu_bw1300_bf16_muon_test_config,
++    deepseek_v4_flash_pretrain_16gpu_bw1300_fp8sc_test_config,
++    deepseek_v4_flash_sft_16gpu_bw1300_bf16_test_config,
 +)
  
  
  __all__ = [
-@@ -63,6 +70,11 @@ __all__ = [
+@@ -63,6 +76,15 @@ __all__ = [
      # DeepSeek V4
      "deepseek_v4_flash_peft_openmath_thinking_packed_config",
      "deepseek_v4_flash_peft_openmath_thinking_packed_gb200_config",
-+    "deepseek_v4_flash_pretrain_32gpu_bw1101_bf16_test_config",
-+    "deepseek_v4_flash_pretrain_32gpu_bw1101_bf16_muon_test_config",
-+    "deepseek_v4_flash_pretrain_32gpu_bw1101_fp8sc_test_config",
-+    "deepseek_v4_flash_sft_32gpu_bw1101_bf16_test_config",
++    "deepseek_v4_flash_pretrain_16gpu_bw1101_bf16_test_config",
++    "deepseek_v4_flash_pretrain_16gpu_bw1101_bf16_muon_test_config",
++    "deepseek_v4_flash_pretrain_16gpu_bw1101_fp8sc_test_config",
++    "deepseek_v4_flash_pretrain_16gpu_bw1300_bf16_test_config",
++    "deepseek_v4_flash_pretrain_16gpu_bw1300_bf16_muon_test_config",
++    "deepseek_v4_flash_pretrain_16gpu_bw1300_fp8sc_test_config",
++    "deepseek_v4_flash_sft_16gpu_bw1101_bf16_test_config",
++    "deepseek_v4_flash_sft_16gpu_bw1300_bf16_test_config",
 +    "deepseek_v4_flash_peft_32gpu_bw1101_bf16_config",
      "deepseek_v4_flash_pretrain_config",
      "deepseek_v4_flash_pretrain_gb200_config",
      "deepseek_v4_flash_pretrain_muon_config",
 diff --git a/src/megatron/bridge/recipes/deepseek/bw1101/__init__.py b/src/megatron/bridge/recipes/deepseek/bw1101/__init__.py
 new file mode 100644
-index 0000000..df3303547
+index 0000000..7bc1a11
 --- /dev/null
 +++ b/src/megatron/bridge/recipes/deepseek/bw1101/__init__.py
 @@ -0,0 +1,24 @@
@@ -52,18 +62,18 @@ index 0000000..df3303547
 +
 +
 +__all__ = [
-+    "deepseek_v4_flash_pretrain_32gpu_bw1101_bf16_test_config",
-+    "deepseek_v4_flash_pretrain_32gpu_bw1101_bf16_muon_test_config",
-+    "deepseek_v4_flash_pretrain_32gpu_bw1101_fp8sc_test_config",
-+    "deepseek_v4_flash_sft_32gpu_bw1101_bf16_test_config",
++    "deepseek_v4_flash_pretrain_16gpu_bw1101_bf16_test_config",
++    "deepseek_v4_flash_pretrain_16gpu_bw1101_bf16_muon_test_config",
++    "deepseek_v4_flash_pretrain_16gpu_bw1101_fp8sc_test_config",
++    "deepseek_v4_flash_sft_16gpu_bw1101_bf16_test_config",
 +    "deepseek_v4_flash_peft_32gpu_bw1101_bf16_config",
 +]
 diff --git a/src/megatron/bridge/recipes/deepseek/bw1101/deepseek_v4.py b/src/megatron/bridge/recipes/deepseek/bw1101/deepseek_v4.py
 new file mode 100644
-index 0000000..4bab23e71
+index 0000000..5edc1eb
 --- /dev/null
 +++ b/src/megatron/bridge/recipes/deepseek/bw1101/deepseek_v4.py
-@@ -0,0 +1,135 @@
+@@ -0,0 +1,130 @@
 +# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
 +# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
 +# Modified by Hygon Information Technology Co., Ltd., 2026.
@@ -108,7 +118,7 @@ index 0000000..4bab23e71
 +    return major >= 9
 +
 +
-+def deepseek_v4_flash_pretrain_32gpu_bw1101_bf16_test_config() -> ConfigContainer:
++def deepseek_v4_flash_pretrain_16gpu_bw1101_bf16_test_config() -> ConfigContainer:
 +    """Return the BW1101-optimized 16-layer pretrain test config."""
 +    cfg = deepseek_v4_flash_pretrain_64gpu_gb200_bf16_config()
 +    cfg.model.use_fused_mhc = _deepseek_v4_supports_bw_fused_kernels()
@@ -125,7 +135,7 @@ index 0000000..4bab23e71
 +    return cfg
 +
 +
-+def deepseek_v4_flash_pretrain_32gpu_bw1101_bf16_muon_test_config() -> ConfigContainer:
++def deepseek_v4_flash_pretrain_16gpu_bw1101_bf16_muon_test_config() -> ConfigContainer:
 +    """Return the BW1101-optimized 16-layer pretrain test config."""
 +    cfg = deepseek_v4_flash_pretrain_64gpu_gb200_bf16_muon_config()
 +    cfg.model.use_fused_mhc = _deepseek_v4_supports_bw_fused_kernels()
@@ -142,7 +152,7 @@ index 0000000..4bab23e71
 +    return cfg
 +
 +
-+def deepseek_v4_flash_pretrain_32gpu_bw1101_fp8sc_test_config() -> ConfigContainer:
++def deepseek_v4_flash_pretrain_16gpu_bw1101_fp8sc_test_config() -> ConfigContainer:
 +    """Return the BW1101-optimized 16-layer pretrain test config."""
 +    cfg = deepseek_v4_flash_pretrain_64gpu_gb200_fp8mx_config()
 +    cfg.model.use_fused_mhc = _deepseek_v4_supports_bw_fused_kernels()
@@ -155,22 +165,17 @@ index 0000000..4bab23e71
 +    cfg.mixed_precision = bf16_with_fp8_subchannel_scaling_mixed()
 +    cfg.model.moe_router_padding_for_fp8 = False
 +    cfg.model.quant_recipe = None
-+
-+    cfg.env_vars = {
-+        **cfg.env_vars,
-+        "TE_HIPBLASLT_ALGO_SELECTION": 0,
-+    }
 +    return cfg
 +
 +
-+def deepseek_v4_flash_sft_32gpu_bw1101_bf16_test_config() -> ConfigContainer:
++def deepseek_v4_flash_sft_16gpu_bw1101_bf16_test_config() -> ConfigContainer:
 +    """Return the BW1101-optimized packed OpenMath SFT test config."""
 +    cfg = deepseek_v4_flash_sft_openmath_thinking_packed_gb200_config()
 +    cfg.model.use_fused_mhc = _deepseek_v4_supports_bw_fused_kernels()
 +    cfg.model.fine_grained_activation_offloading = False
 +    cfg.env_vars.pop("NVTE_CPU_OFFLOAD_V1", None)
-+    cfg.model.hybrid_layer_pattern = "WEWECEHECEHECEHECEHECEHECEHECEHE"
-+    cfg.model.num_layers = 32
++    cfg.model.hybrid_layer_pattern = "WEWECEHECEHECEHE"
++    cfg.model.num_layers = 16
 +    set_deepseek_v4_pipeline_model_parallel_layout(cfg.model)
 +
 +    cfg.env_vars = {
@@ -193,9 +198,117 @@ index 0000000..4bab23e71
 +
 +
 +__all__ = [
-+    "deepseek_v4_flash_pretrain_32gpu_bw1101_bf16_test_config",
-+    "deepseek_v4_flash_pretrain_32gpu_bw1101_bf16_muon_test_config",
-+    "deepseek_v4_flash_pretrain_32gpu_bw1101_fp8sc_test_config",
-+    "deepseek_v4_flash_sft_32gpu_bw1101_bf16_test_config",
++    "deepseek_v4_flash_pretrain_16gpu_bw1101_bf16_test_config",
++    "deepseek_v4_flash_pretrain_16gpu_bw1101_bf16_muon_test_config",
++    "deepseek_v4_flash_pretrain_16gpu_bw1101_fp8sc_test_config",
++    "deepseek_v4_flash_sft_16gpu_bw1101_bf16_test_config",
 +    "deepseek_v4_flash_peft_32gpu_bw1101_bf16_config",
++]
+diff --git a/src/megatron/bridge/recipes/deepseek/bw1300/__init__.py b/src/megatron/bridge/recipes/deepseek/bw1300/__init__.py
+new file mode 100644
+index 0000000..62eb987
+--- /dev/null
++++ b/src/megatron/bridge/recipes/deepseek/bw1300/__init__.py
+@@ -0,0 +1,23 @@
++# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
++# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
++#
++# Licensed under the Apache License, Version 2.0 (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy of the License at
++#
++#     http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++from megatron.bridge.recipes.deepseek.bw1300.deepseek_v4 import *  # noqa: F403
++
++
++__all__ = [
++    "deepseek_v4_flash_pretrain_16gpu_bw1300_bf16_test_config",
++    "deepseek_v4_flash_pretrain_16gpu_bw1300_bf16_muon_test_config",
++    "deepseek_v4_flash_pretrain_16gpu_bw1300_fp8sc_test_config",
++    "deepseek_v4_flash_sft_16gpu_bw1300_bf16_test_config",
++]
+diff --git a/src/megatron/bridge/recipes/deepseek/bw1300/deepseek_v4.py b/src/megatron/bridge/recipes/deepseek/bw1300/deepseek_v4.py
+new file mode 100644
+index 0000000..89febae
+--- /dev/null
++++ b/src/megatron/bridge/recipes/deepseek/bw1300/deepseek_v4.py
+@@ -0,0 +1,73 @@
++# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
++# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
++#
++# Licensed under the Apache License, Version 2.0 (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy of the License at
++#
++#     http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++"""BW1300 recipe for DeepSeek-V4-Flash pretraining."""
++
++from __future__ import annotations
++
++from megatron.bridge.recipes.deepseek.bw1101.deepseek_v4 import (
++    deepseek_v4_flash_pretrain_16gpu_bw1101_bf16_test_config,
++    deepseek_v4_flash_pretrain_16gpu_bw1101_bf16_muon_test_config,
++    deepseek_v4_flash_pretrain_16gpu_bw1101_fp8sc_test_config,
++    deepseek_v4_flash_sft_16gpu_bw1101_bf16_test_config,
++)
++from megatron.bridge.training.config import ConfigContainer
++
++
++def deepseek_v4_flash_pretrain_16gpu_bw1300_bf16_test_config() -> ConfigContainer:
++    """DeepSeek-V4-Flash bounded pretraining on 16 BW1300 GPUs."""
++    cfg = deepseek_v4_flash_pretrain_16gpu_bw1101_bf16_test_config()
++    cfg.env_vars = {
++        **cfg.env_vars,
++        "DEEP_EP_NORMAL_MNVL": 1,
++    }
++    return cfg
++
++
++def deepseek_v4_flash_pretrain_16gpu_bw1300_bf16_muon_test_config() -> ConfigContainer:
++    """DeepSeek-V4-Flash bounded Muon pretraining on 16 BW1300 GPUs."""
++    cfg = deepseek_v4_flash_pretrain_16gpu_bw1101_bf16_muon_test_config()
++    cfg.env_vars = {
++        **cfg.env_vars,
++        "DEEP_EP_NORMAL_MNVL": 1,
++    }
++    return cfg
++
++
++def deepseek_v4_flash_pretrain_16gpu_bw1300_fp8sc_test_config() -> ConfigContainer:
++    """DeepSeek-V4-Flash bounded FP8 subchannel pretraining on 16 BW1300 GPUs."""
++    cfg = deepseek_v4_flash_pretrain_16gpu_bw1101_fp8sc_test_config()
++    cfg.env_vars = {
++        **cfg.env_vars,
++        "DEEP_EP_NORMAL_MNVL": 1,
++    }
++    return cfg
++
++
++def deepseek_v4_flash_sft_16gpu_bw1300_bf16_test_config() -> ConfigContainer:
++    """DeepSeek-V4-Flash packed OpenMath SFT on 16 BW1300 GPUs."""
++    cfg = deepseek_v4_flash_sft_16gpu_bw1101_bf16_test_config()
++    cfg.env_vars = {
++        **cfg.env_vars,
++        "DEEP_EP_NORMAL_MNVL": 1,
++    }
++    return cfg
++
++
++__all__ = [
++    "deepseek_v4_flash_pretrain_16gpu_bw1300_bf16_test_config",
++    "deepseek_v4_flash_pretrain_16gpu_bw1300_bf16_muon_test_config",
++    "deepseek_v4_flash_pretrain_16gpu_bw1300_fp8sc_test_config",
++    "deepseek_v4_flash_sft_16gpu_bw1300_bf16_test_config",
 +]

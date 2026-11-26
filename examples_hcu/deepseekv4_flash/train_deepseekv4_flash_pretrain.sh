@@ -22,11 +22,14 @@ GREEN="\033[32m"
 YELLOW="\033[33m"
 RESET="\033[0m"
 
-# Discover supported recipes from the deepseek module
+# supported recipes
 SUPPORTED_RECIPES=(
-    deepseek_v4_flash_pretrain_32gpu_bw1101_bf16_test_config
-    deepseek_v4_flash_pretrain_32gpu_bw1101_bf16_muon_test_config
-    deepseek_v4_flash_pretrain_32gpu_bw1101_fp8sc_test_config
+    deepseek_v4_flash_pretrain_16gpu_bw1101_bf16_test_config
+    deepseek_v4_flash_pretrain_16gpu_bw1101_bf16_muon_test_config
+    deepseek_v4_flash_pretrain_16gpu_bw1101_fp8sc_test_config
+    deepseek_v4_flash_pretrain_16gpu_bw1300_bf16_test_config
+    deepseek_v4_flash_pretrain_16gpu_bw1300_bf16_muon_test_config
+    deepseek_v4_flash_pretrain_16gpu_bw1300_fp8sc_test_config
 )
 
 # Validate RECIPE argument
@@ -36,7 +39,7 @@ if [[ -z ${RECIPE} ]]; then
     printf "  - %s\n" "${SUPPORTED_RECIPES[@]}"
     echo ""
     echo "Usage: $0 <RECIPE> <MODE> [HOSTFILE] [NODES]"
-    echo "  MODE: dryrun | train"
+    echo "  MODE: dryrun | pretrain"
     exit 1
 fi
 
@@ -98,13 +101,8 @@ TRAIN_CONFIG=(
     train.global_batch_size=${GLOBAL_BATCH_SIZE}
     train.micro_batch_size=${MICRO_BATCH_SIZE}
     rng.seed=1234
-    scheduler.lr_warmup_iters=10
+    scheduler.lr_warmup_iters=$(( TRAIN_ITERS / 10 ))
     scheduler.lr_decay_iters=${TRAIN_ITERS}
-    validation.eval_interval=0
-    validation.eval_iters=0
-    ddp.check_for_nan_in_grad=true
-    ddp.check_for_large_grads=true
-    rerun_state_machine.check_for_nan_in_loss=true
     dist.distributed_timeout_minutes=120
 )
 
@@ -138,19 +136,17 @@ MODEL_CONFIG=(
 )
 
 # ===================================== Checkpoint & Logging Config =====================================
-SAVE_DIR=${CURRENT_DIR}/${RECIPE}_tp${TP}_pp${PP}_ep${EP}_cp${CP}
+SAVE_DIR=${CURRENT_DIR}/${RECIPE}_tp${TP}_pp${PP}_ep${EP}_etp${ETP}_cp${CP}
 CONFIG_DUMP=${SAVE_DIR}/${RECIPE}.yaml
 
 CKPT_AND_LOGGING_CONFIG=(
-    checkpoint.finetune=false
-    checkpoint.load=null
+    checkpoint.load=${SAVE_DIR}/ckpt
     checkpoint.load_optim=false
     checkpoint.load_rng=false
     checkpoint.save=${SAVE_DIR}/ckpt
     checkpoint.save_optim=false
     checkpoint.save_rng=false
     checkpoint.save_interval=100
-    checkpoint.exit_on_missing_checkpoint=false
     logger.log_interval=1
     logger.logging_level=40
     logger.log_throughput=true
@@ -161,21 +157,21 @@ CKPT_AND_LOGGING_CONFIG=(
 # ===================================== Profiler Config =====================================
 PROFILING_CONFIG=(
     profiling.use_pytorch_profiler=true
-    profiling.profile_ranks=[0,8,16,24]
+    profiling.profile_ranks=[0,8]
     profiling.profile_step_start=3
     profiling.profile_step_end=4
     profiling.pytorch_profiler_collect_callstack=true
 )
 
 # ===================================== Summary =====================================
-mkdir -p ${SAVE_DIR}/train_logs
+mkdir -p ${SAVE_DIR}/${MODE}_logs
 echo "======================================"
-echo -e "${YELLOW}DeepSeek-V4-Flash pretrain${RESET}"
+echo -e "${YELLOW}DeepSeek-V4-Flash ${MODE}${RESET}"
 echo "======================================"
 echo "Mode:        ${MODE}"
 echo "Recipe:      ${RECIPE}"
 echo "Nodes:       ${NNODES}"
-echo "GPUs:        ${GPUS}/node, ${WORLD_GPUS} total   (TP=${TP}, PP=${PP}, EP=${EP})"
+echo "GPUs:        ${GPUS}/node, ${WORLD_GPUS} total   (TP=${TP}, PP=${PP}, EP=${EP}, ETP=${ETP}, CP=${CP})"
 echo "Iters:       ${TRAIN_ITERS}"
 echo "GBS/MBS:     ${GLOBAL_BATCH_SIZE} / ${MICRO_BATCH_SIZE}"
 echo "Seq length:  ${SEQ_LENGTH}"
@@ -198,18 +194,17 @@ env_args=(
     -x PATH
     -x LD_LIBRARY_PATH
     -x LOCAL_HF_PATH
-    -x NVTE_USE_HIPBLASLT_GROUPEDGEMM
     -x MASTER_ADDR=${MASTER_ADDR}
     -x MASTER_PORT=${MASTER_PORT}
 )
-SAVE_LOG=${SAVE_DIR}/train_logs/mpi_$(date +%F-%H%M).log
+SAVE_LOG=${SAVE_DIR}/${MODE}_logs/mpi_$(date +%F-%H%M).log
 
 case "${MODE}" in
     dryrun)
         source ${BRIDGE_ENV_SCRIPT}
         python ${MEGATRON_PATH}/scripts/training/run_recipe.py \
             --recipe ${RECIPE} \
-            --mode pretrain \
+            --mode ${MODE} \
             --dry-run \
             "${DATA_CONFIG[@]}" \
             "${TRAIN_CONFIG[@]}" \
@@ -222,7 +217,7 @@ case "${MODE}" in
         echo "======================================"
         ;;
 
-    train)
+    pretrain)
         TORCHRUN_ARGS=(
             --nnodes=${NNODES}
             --nproc_per_node=${GPUS}
@@ -232,7 +227,7 @@ case "${MODE}" in
         RECIPE_ARGS=(
             ${MEGATRON_PATH}/scripts/training/run_recipe.py
             --recipe ${RECIPE}
-            --mode pretrain
+            --mode ${MODE}
             --dataset megatron-indexed
             ${DATA_CONFIG[@]}
             ${TRAIN_CONFIG[@]}
@@ -271,7 +266,7 @@ case "${MODE}" in
         ;;
 
     *)
-        echo "ERROR: unknown mode '${MODE}'. Use 'dryrun' or 'train'."
+        echo "ERROR: unknown mode '${MODE}'."
         exit 1
         ;;
 esac
