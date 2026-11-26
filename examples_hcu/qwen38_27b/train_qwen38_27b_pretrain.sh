@@ -22,7 +22,7 @@ GREEN="\033[32m"
 YELLOW="\033[33m"
 RESET="\033[0m"
 
-# Discover supported recipes from the qwen module
+# supported recipes
 SUPPORTED_RECIPES=(
     qwen35_vl_27b_pretrain_32gpu_bw1101_bf16_mock_config
 )
@@ -34,7 +34,7 @@ if [[ -z ${RECIPE} ]]; then
     printf "  - %s\n" "${SUPPORTED_RECIPES[@]}"
     echo ""
     echo "Usage: $0 <RECIPE> <MODE> [HOSTFILE] [NODES]"
-    echo "  MODE: dryrun | train"
+    echo "  MODE: dryrun | pretrain"
     exit 1
 fi
 
@@ -84,7 +84,7 @@ DATA_CONFIG=(
 )
 
 # ===================================== Train Config =====================================
-TRAIN_ITERS=20
+TRAIN_ITERS=100
 GLOBAL_BATCH_SIZE=32
 MICRO_BATCH_SIZE=2
 
@@ -92,9 +92,11 @@ TRAIN_CONFIG=(
     train.train_iters=${TRAIN_ITERS}
     train.global_batch_size=${GLOBAL_BATCH_SIZE}
     train.micro_batch_size=${MICRO_BATCH_SIZE}
-    scheduler.lr_warmup_iters=2
+    rng.seed=5678
+    scheduler.lr_warmup_iters=$(( TRAIN_ITERS / 10 ))
     scheduler.lr_decay_iters=${TRAIN_ITERS}
     tokenizer.tokenizer_model=${LOCAL_HF_PATH}
+    dist.distributed_timeout_minutes=120
 )
 
 # ===================================== Optimizer Config =====================================
@@ -124,13 +126,13 @@ CONFIG_DUMP=${SAVE_DIR}/${RECIPE}.yaml
 
 CKPT_AND_LOGGING_CONFIG=(
     checkpoint.pretrained_checkpoint=${LOCAL_CORE_PATH}/iter_0000000
-    checkpoint.load=null
+    checkpoint.load=${SAVE_DIR}/ckpt
     checkpoint.load_optim=false
     checkpoint.load_rng=false
     checkpoint.save=${SAVE_DIR}/ckpt
     checkpoint.save_optim=false
     checkpoint.save_rng=false
-    checkpoint.save_interval=20
+    checkpoint.save_interval=100
     logger.log_interval=1
     logger.logging_level=40
     logger.log_throughput=true
@@ -141,16 +143,16 @@ CKPT_AND_LOGGING_CONFIG=(
 # ===================================== Profiler Config =====================================
 PROFILING_CONFIG=(
     profiling.use_pytorch_profiler=true
-    profiling.profile_ranks=[0,16]
+    profiling.profile_ranks=[0]
     profiling.profile_step_start=3
     profiling.profile_step_end=4
     profiling.pytorch_profiler_collect_callstack=true
 )
 
 # ===================================== Summary =====================================
-mkdir -p ${SAVE_DIR}/train_logs
+mkdir -p ${SAVE_DIR}/${MODE}_logs
 echo "======================================"
-echo -e "${YELLOW}Qwen3.8-27B pretrain${RESET}"
+echo -e "${YELLOW}Qwen3.8-27B ${MODE}${RESET}"
 echo "======================================"
 echo "Mode:        ${MODE}"
 echo "Recipe:      ${RECIPE}"
@@ -181,7 +183,7 @@ env_args=(
     -x MASTER_ADDR=${MASTER_ADDR}
     -x MASTER_PORT=${MASTER_PORT}
 )
-SAVE_LOG=${SAVE_DIR}/train_logs/mpi_$(date +%F-%H%M).log
+SAVE_LOG=${SAVE_DIR}/${MODE}_logs/mpi_$(date +%F-%H%M).log
 
 # ------------------------------------------------------------------------------
 # Phase 1: HF -> Megatron import (skipped if the base checkpoint already exists)
@@ -214,7 +216,7 @@ case "${MODE}" in
         source ${BRIDGE_ENV_SCRIPT}
         python ${MEGATRON_PATH}/scripts/training/run_recipe.py \
             --recipe ${RECIPE} \
-            --mode pretrain \
+            --mode ${MODE} \
             --dry-run \
             "${DATA_CONFIG[@]}" \
             "${TRAIN_CONFIG[@]}" \
@@ -227,7 +229,7 @@ case "${MODE}" in
         echo "======================================"
         ;;
 
-    train)
+    pretrain)
         TORCHRUN_ARGS=(
             --nnodes=${NNODES}
             --nproc_per_node=${GPUS}
@@ -237,7 +239,7 @@ case "${MODE}" in
         RECIPE_ARGS=(
             ${MEGATRON_PATH}/scripts/training/run_recipe.py
             --recipe ${RECIPE}
-            --mode pretrain
+            --mode ${MODE}
             ${DATA_CONFIG[@]}
             ${TRAIN_CONFIG[@]}
             ${OPTIMIZER_CONFIG[@]}
@@ -275,7 +277,7 @@ case "${MODE}" in
         ;;
 
     *)
-        echo "ERROR: unknown mode '${MODE}'. Use 'dryrun' or 'train'."
+        echo "ERROR: unknown mode '${MODE}'."
         exit 1
         ;;
 esac
