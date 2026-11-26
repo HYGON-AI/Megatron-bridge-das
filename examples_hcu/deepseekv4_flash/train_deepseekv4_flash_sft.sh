@@ -24,9 +24,10 @@ GREEN="\033[32m"
 YELLOW="\033[33m"
 RESET="\033[0m"
 
-# Discover supported recipes from the deepseek module
+# supported recipes
 SUPPORTED_RECIPES=(
-    deepseek_v4_flash_sft_32gpu_bw1101_bf16_test_config
+    deepseek_v4_flash_sft_16gpu_bw1101_bf16_test_config
+    deepseek_v4_flash_sft_16gpu_bw1300_bf16_test_config
 )
 
 # Validate RECIPE argument
@@ -98,18 +99,12 @@ TRAIN_CONFIG=(
     train.train_iters=${TRAIN_ITERS}
     train.global_batch_size=${GLOBAL_BATCH_SIZE}
     train.micro_batch_size=${MICRO_BATCH_SIZE}
-    validation.eval_interval=0
-    validation.eval_iters=0
     rng.seed=5678
-    ddp.check_for_nan_in_grad=true
-    ddp.check_for_large_grads=true
-    ddp.overlap_grad_reduce=false
-    rerun_state_machine.check_for_nan_in_loss=true
-    scheduler.lr_warmup_iters=10
+    scheduler.lr_warmup_iters=$(( TRAIN_ITERS / 10 ))
     scheduler.lr_decay_iters=${TRAIN_ITERS}
     tokenizer.tokenizer_model=${LOCAL_HF_PATH}
     tokenizer.chat_template_path=${MEGATRON_PATH}/examples_hcu/deepseekv4_flash/dsv4_chat_template.jinja
-    dist.distributed_timeout_minutes=180
+    dist.distributed_timeout_minutes=120
 )
 
 # ===================================== Optimizer Config =====================================
@@ -118,7 +113,7 @@ OPTIMIZER_CONFIG=(
 
 # ===================================== Parallel Config =====================================
 TP=1
-PP=4
+PP=2
 EP=8
 ETP=1
 CP=1
@@ -142,19 +137,18 @@ MODEL_CONFIG=(
 )
 
 # ===================================== Checkpoint & Logging Config =====================================
-SAVE_DIR=${CURRENT_DIR}/${RECIPE}_tp${TP}_pp${PP}_ep${EP}_cp${CP}
+SAVE_DIR=${CURRENT_DIR}/${RECIPE}_tp${TP}_pp${PP}_ep${EP}_etp${ETP}_cp${CP}
 CONFIG_DUMP=${SAVE_DIR}/${RECIPE}.yaml
 
 CKPT_AND_LOGGING_CONFIG=(
     checkpoint.pretrained_checkpoint=${LOCAL_CORE_PATH}/iter_0000000
-    checkpoint.load=null
+    checkpoint.load=${SAVE_DIR}/ckpt
     checkpoint.load_optim=false
     checkpoint.load_rng=false
     checkpoint.save=${SAVE_DIR}/ckpt
     checkpoint.save_optim=false
     checkpoint.save_rng=false
     checkpoint.save_interval=100
-    checkpoint.exit_on_missing_checkpoint=false
     logger.log_interval=1
     logger.logging_level=40
     logger.log_throughput=true
@@ -165,21 +159,21 @@ CKPT_AND_LOGGING_CONFIG=(
 # ===================================== Profiler Config =====================================
 PROFILING_CONFIG=(
     profiling.use_pytorch_profiler=true
-    profiling.profile_ranks=[0,8,16,24]
+    profiling.profile_ranks=[0,8]
     profiling.profile_step_start=3
     profiling.profile_step_end=4
     profiling.pytorch_profiler_collect_callstack=true
 )
 
 # ===================================== Summary =====================================
-mkdir -p ${SAVE_DIR}/sft_logs
+mkdir -p ${SAVE_DIR}/${MODE}_logs
 echo "======================================"
-echo -e "${YELLOW}DeepSeek-V4-Flash sft${RESET}"
+echo -e "${YELLOW}DeepSeek-V4-Flash ${MODE}${RESET}"
 echo "======================================"
 echo "Mode:        ${MODE}"
 echo "Recipe:      ${RECIPE}"
 echo "Nodes:       ${NNODES}"
-echo "GPUs:        ${GPUS}/node, ${WORLD_GPUS} total   (TP=${TP}, PP=${PP}, EP=${EP})"
+echo "GPUs:        ${GPUS}/node, ${WORLD_GPUS} total   (TP=${TP}, PP=${PP}, EP=${EP}, ETP=${ETP}, CP=${CP})"
 echo "Iters:       ${TRAIN_ITERS}"
 echo "GBS/MBS:     ${GLOBAL_BATCH_SIZE} / ${MICRO_BATCH_SIZE}"
 echo "Seq length:  ${SEQ_LENGTH}"
@@ -203,11 +197,10 @@ env_args=(
     -x LD_LIBRARY_PATH
     -x LOCAL_HF_PATH
     -x NEMO_DATASETS_CACHE
-    -x NVTE_USE_HIPBLASLT_GROUPEDGEMM
     -x MASTER_ADDR=${MASTER_ADDR}
     -x MASTER_PORT=${MASTER_PORT}
 )
-SAVE_LOG=${SAVE_DIR}/sft_logs/mpi_$(date +%F-%H%M).log
+SAVE_LOG=${SAVE_DIR}/${MODE}_logs/mpi_$(date +%F-%H%M).log
 
 # ------------------------------------------------------------------------------
 # Phase 1: HF -> Megatron import (skipped if the base checkpoint already exists)
@@ -216,7 +209,7 @@ SAVE_LOG=${SAVE_DIR}/sft_logs/mpi_$(date +%F-%H%M).log
 if [ -e "${LOCAL_CORE_PATH}/iter_0000000/.metadata" ]; then
     echo -e "${GREEN}Phase 1: base checkpoint already present at ${LOCAL_CORE_PATH} - skipping import.${RESET}"
 else
-    echo -e "${GREEN}Phase 1: importing ${LOCAL_HF_PATH} -> ${LOCAL_CORE_PATH} (TP=$TP PP=$PP EP=$EP)${RESET}"
+    echo -e "${GREEN}Phase 1: importing ${LOCAL_HF_PATH} -> ${LOCAL_CORE_PATH} (TP=$TP PP=$PP EP=$EP ETP=$ETP CP=$CP)${RESET}"
     mpirun -np ${NNODES} \
            --hostfile ${HOSTFILE_SLOTS} \
            --allow-run-as-root \
@@ -247,10 +240,6 @@ fi
 
 # ------------------------------------------------------------------------------
 # Phase 2: Full SFT
-#
-# No --dataset: the recipe ships an unpacked (SBHD) SQuAD config. To use another
-# source, pass `--dataset gsm8k` or `--dataset local-jsonl dataset.dataset_root=<path>`.
-# Do not enable `dataset.enable_offline_packing`; DSv4 rejects packed sequences.
 # ------------------------------------------------------------------------------
 
 echo -e "${GREEN}Phase 2: SFT with recipe ${RECIPE}${RESET}"
@@ -259,7 +248,7 @@ case "${MODE}" in
         source ${BRIDGE_ENV_SCRIPT}
         python ${MEGATRON_PATH}/scripts/training/run_recipe.py \
             --recipe ${RECIPE} \
-            --mode sft \
+            --mode ${MODE} \
             --step-func dsv4_step \
             --dry-run \
             "${DATA_CONFIG[@]}" \
@@ -283,7 +272,7 @@ case "${MODE}" in
         RECIPE_ARGS=(
             ${MEGATRON_PATH}/scripts/training/run_recipe.py
             --recipe ${RECIPE}
-            --mode sft
+            --mode ${MODE}
             --step-func dsv4_step
             ${DATA_CONFIG[@]}
             ${TRAIN_CONFIG[@]}
@@ -322,7 +311,7 @@ case "${MODE}" in
         ;;
 
     *)
-        echo "ERROR: unknown mode '${MODE}'. Use 'dryrun' or 'sft'."
+        echo "ERROR: unknown mode '${MODE}'."
         exit 1
         ;;
 esac

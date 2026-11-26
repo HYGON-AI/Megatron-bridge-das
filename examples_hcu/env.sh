@@ -13,7 +13,7 @@ export OMP_NUM_THREADS=1
 export PYTHONPATH=${MEGATRON_PATH}/src:${MEGATRON_PATH}/3rdparty/Megatron-LM:${PYTHONPATH:-}
 export TRITON_HOME=/tmp
 export ROCSHMEM_IB_GID_INDEX=3
-export NCCL_SOCKET_IFNAME=eth0
+export NCCL_SOCKET_IFNAME=${NCCL_SOCKET_IFNAME:-$(awk '$2=="00000000"{print $1;exit}' /proc/net/route)}
 export GLOO_SOCKET_IFNAME=${NCCL_SOCKET_IFNAME}
 
 # These variables should be modified according to the environment of the machine you are using.

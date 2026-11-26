@@ -21,7 +21,7 @@ RED="\033[31m"
 YELLOW="\033[33m"
 RESET="\033[0m"
 
-# Discover supported recipes from the glm module
+# supported recipes
 SUPPORTED_RECIPES=(
     glm53_flash_peft_32gpu_bw1101_bf16_config
     glm53_flash_peft_32gpu_bw1300_bf16_config
@@ -34,7 +34,7 @@ if [[ -z ${RECIPE} ]]; then
     printf "  - %s\n" "${SUPPORTED_RECIPES[@]}"
     echo ""
     echo "Usage: $0 <RECIPE> <MODE> [HOSTFILE] [NODES]"
-    echo "  MODE: dryrun | peft"
+    echo "  MODE: dryrun | lora"
     exit 1
 fi
 
@@ -96,10 +96,11 @@ TRAIN_CONFIG=(
     train.train_iters=${TRAIN_ITERS}
     train.global_batch_size=${GLOBAL_BATCH_SIZE}
     train.micro_batch_size=${MICRO_BATCH_SIZE}
+    rng.seed=5678
     scheduler.lr_warmup_iters=$(( TRAIN_ITERS / 10 ))
     scheduler.lr_decay_iters=${TRAIN_ITERS}
     tokenizer.tokenizer_model=${LOCAL_HF_PATH}
-    dist.distributed_timeout_minutes=60
+    dist.distributed_timeout_minutes=120
 )
 
 # ===================================== Optimizer Config =====================================
@@ -141,7 +142,7 @@ CONFIG_DUMP=${SAVE_DIR}/${RECIPE}.yaml
 
 CKPT_AND_LOGGING_CONFIG=(
     checkpoint.pretrained_checkpoint=${LOCAL_HF_PATH}
-    checkpoint.load=null
+    checkpoint.load=${SAVE_DIR}/ckpt
     checkpoint.load_optim=false
     checkpoint.load_rng=false
     checkpoint.save=${SAVE_DIR}/ckpt
@@ -205,7 +206,7 @@ case "${MODE}" in
         source ${BRIDGE_ENV_SCRIPT}
         python ${MEGATRON_PATH}/scripts/training/run_recipe.py \
             --recipe ${RECIPE} \
-            --mode lora \
+            --mode ${MODE} \
             --dry-run \
             "${DATA_CONFIG[@]}" \
             "${TRAIN_CONFIG[@]}" \
@@ -218,7 +219,7 @@ case "${MODE}" in
         echo "======================================"
         ;;
 
-    peft)
+    lora)
         TORCHRUN_ARGS=(
             --nnodes=${NNODES}
             --nproc_per_node=${GPUS}
@@ -228,7 +229,7 @@ case "${MODE}" in
         RECIPE_ARGS=(
             ${MEGATRON_PATH}/scripts/training/run_recipe.py
             --recipe ${RECIPE}
-            --mode lora
+            --mode ${MODE}
             ${DATA_CONFIG[@]}
             ${TRAIN_CONFIG[@]}
             ${OPTIMIZER_CONFIG[@]}
